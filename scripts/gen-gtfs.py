@@ -176,6 +176,25 @@ def is_trolley_street_stop(name):
     return False
 
 
+def brighten_color(hex_color):
+    """Match the runtime brightening in src/data/buses.ts so the network
+    graph uses the same colors the live map renders."""
+    h = hex_color.replace("#", "")
+    if len(h) != 6: return hex_color
+    try:
+        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    except ValueError:
+        return hex_color
+    lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+    if lum >= 0.55: return hex_color
+    spread = max(r, g, b) - min(r, g, b)
+    if spread < 10: return "#F59E0B"
+    peak = max(r, g, b, 1)
+    factor = 230 / peak
+    nr, ng, nb = min(255, round(r * factor)), min(255, round(g * factor)), min(255, round(b * factor))
+    return "#%02X%02X%02X" % (nr, ng, nb)
+
+
 def ts_string(s):
     return json.dumps(s)
 
@@ -325,6 +344,147 @@ def main():
         # Numeric routes first by number, then everything else alphabetic
         (0, int(r["short"])) if r["short"].isdigit() else (1, r["short"]),
     ))
+
+    # ------------------------------------------------------------------
+    # Network graph for multi-modal trip planning. Combine rail + metro +
+    # trolley + bus into one routable graph with walking transfers between
+    # stops that are physically near each other. Client-side Dijkstra will
+    # find direct + 1-transfer + 2-transfer trips across any pair of stops.
+    # ------------------------------------------------------------------
+    print("building network graph...", file=sys.stderr)
+    import math
+
+    # Average mode speeds in mph for time estimation. These are rough but
+    # let the router rank options without timetable lookup.
+    MODE_SPEED_MPH = {
+        "rr": 30, "mfl": 22, "bsl": 22, "nhsl": 25,
+        "trolley": 12, "girard": 12, "suburban-trolley": 18, "bus": 12,
+    }
+
+    network_stops = {}  # stop_id -> {id, name, lat, lon, modes: set, lineIds: set}
+    network_routes = {}  # internal_line_id -> {color, mode, name, short, stops: [stop_ids]}
+
+    def add_network_stop(canonical_id, name, lat, lon, mode, line_id):
+        s = network_stops.setdefault(canonical_id, {
+            "id": canonical_id, "name": name, "lat": lat, "lon": lon,
+            "modes": set(), "lineIds": set(),
+        })
+        s["modes"].add(mode)
+        s["lineIds"].add(line_id)
+
+    # RR + metro: use the same Station ids we emit elsewhere so the UI can
+    # link a graph node back to a rendered marker on the map.
+    for cid, s in stations.items():
+        lid = next(iter(s["lineIds"]))
+        line_def = next((l for l in RR_LINES if l[0] == lid), None) \
+                or next((l for l in METRO_LINES if l[1] == lid), None)
+        if not line_def: continue
+        # METRO_LINES tuple: (gtfs_id, internal_id, metro, name, short, mode, color, api)
+        # RR_LINES tuple:    (internal_id, name, short, mode, color, api)
+        for line_id in s["lineIds"]:
+            mode = next((row[5] for row in METRO_LINES if row[1] == line_id), None) \
+                or next((row[3] for row in RR_LINES if row[0] == line_id), None) \
+                or "rr"
+            add_network_stop(cid, s["name"], s["lat"], s["lon"], mode, line_id)
+
+    for (lid, _name, _short, _mode, _color, _api) in RR_LINES:
+        order = stops_for_route(rr_trip_index, lid, "0") or stops_for_route(rr_trip_index, lid, "1")
+        network_routes[lid] = {
+            "color": _color, "mode": "rr", "name": _name, "short": _short,
+            "stops": [f"rr-{sid}" for sid in order if sid in rr_stops],
+        }
+    for (gid, lid, _metro, name, short, mode, color, _api) in METRO_LINES:
+        order = stops_for_route(bus_trip_index, gid, "0") or stops_for_route(bus_trip_index, gid, "1")
+        network_routes[lid] = {
+            "color": color, "mode": mode, "name": name, "short": short,
+            "stops": [f"m-{sid}" for sid in order if sid in bus_stops],
+        }
+
+    # Buses: include every bus stop and route. Big - thousands of stops -
+    # but Dijkstra is fast and the graph compresses well in JSON.
+    for rid, info in bus_routes.items():
+        if rid in metro_gtfs_ids: continue
+        if info["type"] != "3": continue
+        trip = representative_trip(bus_trip_index, rid, "0") or representative_trip(bus_trip_index, rid, "1")
+        if not trip: continue
+        bright = brighten_color(info["color"])
+        stop_ids_full = []
+        for sid in trip["stops"]:
+            if sid not in bus_stops: continue
+            s = bus_stops[sid]
+            cid = f"b-{sid}"
+            add_network_stop(cid, s["name"], s["lat"], s["lon"], "bus", rid)
+            stop_ids_full.append(cid)
+        network_routes[f"BUS-{rid}"] = {
+            "color": bright, "mode": "bus", "name": info["name"], "short": info["short"],
+            "stops": stop_ids_full,
+        }
+
+    # Walking transfers: for each stop, find neighbors within 400m. Use a
+    # coarse spatial hash (cells of ~500m) so this is O(N) not O(N^2) on
+    # ~10k stops.
+    print(f"  graph has {len(network_stops)} stops, {len(network_routes)} routes", file=sys.stderr)
+    print("  computing walking transfers...", file=sys.stderr)
+    TRANSFER_RADIUS_M = 400
+    WALK_MPH = 3.0
+    cell_deg = 500 / 111_111  # ~500m in degrees latitude
+    grid = defaultdict(list)
+    for cid, s in network_stops.items():
+        cell = (int(s["lat"] / cell_deg), int(s["lon"] / cell_deg))
+        grid[cell].append(cid)
+
+    def haversine_m(la1, lo1, la2, lo2):
+        R = 6_371_000
+        p1, p2 = math.radians(la1), math.radians(la2)
+        dp = math.radians(la2 - la1)
+        dl = math.radians(lo2 - lo1)
+        a = math.sin(dp/2)**2 + math.cos(p1)*math.cos(p2)*math.sin(dl/2)**2
+        return 2 * R * math.asin(math.sqrt(a))
+
+    transfers = []
+    for cid, s in network_stops.items():
+        ci, cj = int(s["lat"] / cell_deg), int(s["lon"] / cell_deg)
+        # Check this cell + 8 neighbors
+        for di in (-1, 0, 1):
+            for dj in (-1, 0, 1):
+                for other in grid.get((ci + di, cj + dj), []):
+                    if other <= cid: continue  # one direction; router uses both ways
+                    o = network_stops[other]
+                    # Skip if same stop or different modes that wouldn't realistically
+                    # share a walking transfer (same-mode within 50m is the same physical
+                    # platform; cross-mode within 400m is a real walk).
+                    d = haversine_m(s["lat"], s["lon"], o["lat"], o["lon"])
+                    if d > TRANSFER_RADIUS_M: continue
+                    # Cost: meters / (WALK_MPH * 1609.34 / 60) = minutes
+                    minutes = round(d / (WALK_MPH * 1609.34 / 60), 2)
+                    transfers.append([cid, other, minutes])
+
+    print(f"  {len(transfers)} walking transfers", file=sys.stderr)
+
+    # Speeds map for client
+    speeds = {k: v for k, v in MODE_SPEED_MPH.items()}
+
+    network = {
+        "stops": [
+            {
+                "id": s["id"],
+                "name": s["name"],
+                "lat": round(s["lat"], 5),
+                "lon": round(s["lon"], 5),
+                "modes": sorted(s["modes"]),
+                "lineIds": sorted(s["lineIds"]),
+            }
+            for s in network_stops.values()
+        ],
+        "routes": network_routes,
+        "transfers": transfers,
+        "speeds": speeds,
+    }
+
+    network_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "public", "network.json"))
+    with open(network_path, "w") as f:
+        json.dump(network, f, separators=(",", ":"))
+    print(f"wrote {network_path}", file=sys.stderr)
 
     print()
     print("export const BUS_ROUTES = [")

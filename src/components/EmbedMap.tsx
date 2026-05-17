@@ -84,6 +84,7 @@ export default function EmbedMap({ lineFilter }: Props) {
         stations={visibleStations}
         enabledLines={enabledLines}
         busData={new Map()}
+        trip={null}
         selection={null}
         onSelect={() => {}}
       />

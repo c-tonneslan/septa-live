@@ -8,6 +8,7 @@ import type { Train, Vehicle, Alert, ElevatorOutage } from "@/lib/septa";
 import { lines } from "@/data/lines";
 import { stations } from "@/data/stations";
 import { loadBusData, type BusRouteData } from "@/data/buses";
+import type { Trip } from "@/lib/router";
 
 const MapView = dynamic(() => import("./MapView"), {
   ssr: false,
@@ -41,6 +42,7 @@ export default function App() {
   const [enabledBusRoutes, setEnabledBusRoutes] = useState<Set<string>>(() => new Set());
   const [busData, setBusData] = useState<Record<string, BusRouteData> | null>(null);
   const [selection, setSelection] = useState<Selection>(null);
+  const [trip, setTrip] = useState<Trip | null>(null);
   const inflightTrains = useRef<AbortController | null>(null);
   const inflightVehicles = useRef<AbortController | null>(null);
 
@@ -215,6 +217,7 @@ export default function App() {
             stations={visibleStations}
             enabledLines={enabledLines}
             busData={enabledBusData}
+            trip={trip}
             selection={selection}
             onSelect={setSelection}
           />
@@ -263,6 +266,7 @@ export default function App() {
               onSetModeLines={setModeLines}
               onToggleBusRoute={toggleBusRoute}
               onClearBusRoutes={clearBusRoutes}
+              onShowTrip={setTrip}
               selection={selection}
               onSelect={setSelection}
             />

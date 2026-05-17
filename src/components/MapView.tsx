@@ -6,6 +6,7 @@ import type { Train, Vehicle } from "@/lib/septa";
 import type { Station } from "@/data/stations";
 import { lines } from "@/data/lines";
 import { lookupBusRoute, type BusRouteData } from "@/data/buses";
+import type { Trip } from "@/lib/router";
 import type { Selection } from "./App";
 
 // Center on City Hall with a zoom that covers Trenton, Newark DE, Doylestown,
@@ -66,6 +67,7 @@ interface Props {
   stations: Station[];
   enabledLines: Set<string>;
   busData: Map<string, BusRouteData>;
+  trip: Trip | null;
   selection: Selection;
   onSelect: (s: Selection) => void;
 }
@@ -76,6 +78,7 @@ export default function MapView({
   stations,
   enabledLines,
   busData,
+  trip,
   selection,
   onSelect,
 }: Props) {
@@ -95,6 +98,7 @@ export default function MapView({
   const polylineLayerRef = useRef<L.LayerGroup | null>(null);
   const busPolylineLayerRef = useRef<L.LayerGroup | null>(null);
   const busStopLayerRef = useRef<L.LayerGroup | null>(null);
+  const tripLayerRef = useRef<L.LayerGroup | null>(null);
   const stationLayerRef = useRef<L.LayerGroup | null>(null);
   const trainLayerRef = useRef<L.LayerGroup | null>(null);
   const vehicleLayerRef = useRef<L.LayerGroup | null>(null);
@@ -161,10 +165,11 @@ export default function MapView({
       },
     ).addTo(map);
     mapRef.current = map;
-    // Z-ordering, bottom to top: bus polylines, rail polylines, bus stops,
-    // rail stations, transit vehicles, RR trains.
+    // Z-ordering, bottom to top: bus polylines, rail polylines, trip overlay,
+    // bus stops, rail stations, transit vehicles, RR trains.
     busPolylineLayerRef.current = L.layerGroup().addTo(map);
     polylineLayerRef.current = L.layerGroup().addTo(map);
+    tripLayerRef.current = L.layerGroup().addTo(map);
     busStopLayerRef.current = L.layerGroup().addTo(map);
     stationLayerRef.current = L.layerGroup().addTo(map);
     vehicleLayerRef.current = L.layerGroup().addTo(map);
@@ -176,6 +181,7 @@ export default function MapView({
       polylineLayerRef.current = null;
       busPolylineLayerRef.current = null;
       busStopLayerRef.current = null;
+      tripLayerRef.current = null;
       stationLayerRef.current = null;
       trainLayerRef.current = null;
       vehicleLayerRef.current = null;
@@ -213,6 +219,49 @@ export default function MapView({
       }).addTo(layer);
     }
   }, [enabledLines, highlightedLineId, highlightedBusRouteId]);
+
+  // trip overlay: heavy line tracing the trip the user planned, with leg
+  // boundary markers at each board/alight.
+  useEffect(() => {
+    const layer = tripLayerRef.current;
+    const map = mapRef.current;
+    if (!layer) return;
+    layer.clearLayers();
+    if (!trip) return;
+    const allPoints: [number, number][] = [];
+    for (const leg of trip.legs) {
+      const points: [number, number][] = leg.kind === "ride"
+        ? leg.stops.map((s) => [s.lat, s.lon])
+        : [[leg.fromStop.lat, leg.fromStop.lon], [leg.toStop.lat, leg.toStop.lon]];
+      allPoints.push(...points);
+      L.polyline(points, {
+        color: leg.kind === "ride" ? leg.routeColor : "#a3a3a3",
+        weight: 6,
+        opacity: 0.9,
+        dashArray: leg.kind === "walk" ? "6 6" : undefined,
+        lineCap: "round",
+        lineJoin: "round",
+      }).addTo(layer);
+      L.circleMarker([leg.fromStop.lat, leg.fromStop.lon], {
+        radius: 6, color: "#0b0f14", fillColor: "#facc15", fillOpacity: 1, weight: 2,
+      })
+        .bindTooltip(leg.fromStop.name)
+        .addTo(layer);
+    }
+    const last = trip.legs[trip.legs.length - 1];
+    if (last) {
+      L.circleMarker([last.toStop.lat, last.toStop.lon], {
+        radius: 7, color: "#0b0f14", fillColor: "#34d399", fillOpacity: 1, weight: 2,
+      })
+        .bindTooltip(last.toStop.name)
+        .addTo(layer);
+    }
+    // Fit map to the trip bounds with a little padding so the whole route is visible.
+    if (map && allPoints.length > 1) {
+      const bounds = L.latLngBounds(allPoints);
+      map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
+    }
+  }, [trip]);
 
   // bus polylines + stops, lazy-rendered for whatever routes the user has enabled
   useEffect(() => {

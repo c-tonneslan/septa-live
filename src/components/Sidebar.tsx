@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { lines, type Mode } from "@/data/lines";
-import { stations, lookupStation, hasRegionalRail } from "@/data/stations";
+import { stations, lookupStation } from "@/data/stations";
 import { busRoutes, lookupBusRoute } from "@/data/buses";
-import type { Train, Vehicle, StationArrivals, NextToArrive } from "@/lib/septa";
+import { loadNetwork, route as runRoute, type Trip, type NetworkStop } from "@/lib/router";
+import type { Train, Vehicle, StationArrivals } from "@/lib/septa";
 import type { Selection } from "./App";
 
 interface Props {
@@ -17,6 +18,7 @@ interface Props {
   onSetModeLines: (modes: Mode[], on: boolean) => void;
   onToggleBusRoute: (id: string) => void;
   onClearBusRoutes: () => void;
+  onShowTrip: (trip: Trip | null) => void;
   selection: Selection;
   onSelect: (s: Selection) => void;
 }
@@ -37,6 +39,7 @@ export default function Sidebar({
   onSetModeLines,
   onToggleBusRoute,
   onClearBusRoutes,
+  onShowTrip,
   selection,
   onSelect,
 }: Props) {
@@ -68,6 +71,7 @@ export default function Sidebar({
             onSetModeLines={onSetModeLines}
             onToggleBusRoute={onToggleBusRoute}
             onClearBusRoutes={onClearBusRoutes}
+            onShowTrip={onShowTrip}
             onSelect={onSelect}
           />
         )}
@@ -86,6 +90,7 @@ function LinePanel({
   onSetModeLines,
   onToggleBusRoute,
   onClearBusRoutes,
+  onShowTrip,
   onSelect,
 }: {
   trains: Train[];
@@ -97,6 +102,7 @@ function LinePanel({
   onSetModeLines: (modes: Mode[], on: boolean) => void;
   onToggleBusRoute: (id: string) => void;
   onClearBusRoutes: () => void;
+  onShowTrip: (trip: Trip | null) => void;
   onSelect: (s: Selection) => void;
 }) {
   const countsByLine = useMemo(() => {
@@ -231,7 +237,7 @@ function LinePanel({
         onClearBusRoutes={onClearBusRoutes}
       />
 
-      <TripPlanner />
+      <TripPlanner onShowTrip={onShowTrip} />
 
       <section>
         <h2 className="text-xs uppercase tracking-widest text-muted mb-2">Find a station</h2>
@@ -241,114 +247,110 @@ function LinePanel({
   );
 }
 
-function TripPlanner() {
+function TripPlanner({
+  onShowTrip,
+}: {
+  onShowTrip: (trip: Trip | null) => void;
+}) {
   const [open, setOpen] = useState(false);
-  const [origin, setOrigin] = useState<string>("");
-  const [dest, setDest] = useState<string>("");
-  const [trips, setTrips] = useState<NextToArrive[] | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [graphState, setGraphState] = useState<{
+    stops: NetworkStop[];
+    graph: Parameters<typeof runRoute>[0];
+  } | null>(null);
+  const [graphErr, setGraphErr] = useState<string | null>(null);
+
+  const [originId, setOriginId] = useState<string | null>(null);
+  const [destId, setDestId] = useState<string | null>(null);
+  const [originQ, setOriginQ] = useState("");
+  const [destQ, setDestQ] = useState("");
+  const [trip, setTrip] = useState<Trip | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  const rrStations = useMemo(
-    () => stations.filter((s) => hasRegionalRail(s)).sort((a, b) => a.name.localeCompare(b.name)),
-    [],
-  );
+  // Lazy-load the ~1.8MB network graph the first time the panel opens.
+  useEffect(() => {
+    if (!open || graphState || graphErr) return;
+    loadNetwork()
+      .then(({ network, graph }) => setGraphState({ stops: network.stops, graph }))
+      .catch(() => setGraphErr("Couldn't load the SEPTA network graph."));
+  }, [open, graphState, graphErr]);
 
-  const search = async () => {
-    const o = lookupStation(origin);
-    const d = lookupStation(dest);
-    if (!o || !d) {
-      setErr("Pick both stations from the list.");
+  const findRoute = () => {
+    if (!graphState || !originId || !destId) return;
+    setErr(null);
+    const result = runRoute(graphState.graph, originId, destId);
+    if (!result) {
+      setErr("No route found.");
+      onShowTrip(null);
+      setTrip(null);
       return;
     }
-    setLoading(true);
-    setErr(null);
-    setTrips(null);
-    try {
-      const r = await fetch(
-        `/api/next-to-arrive?origin=${encodeURIComponent(o.name)}&destination=${encodeURIComponent(d.name)}&results=6`,
-        { cache: "no-store" },
-      );
-      if (!r.ok) throw new Error(`${r.status}`);
-      const j = (await r.json()) as { trips: NextToArrive[] };
-      setTrips(j.trips);
-    } catch {
-      setErr("Couldn't load trips.");
-    } finally {
-      setLoading(false);
-    }
+    setTrip(result);
+    onShowTrip(result);
+  };
+
+  const clear = () => {
+    setTrip(null);
+    onShowTrip(null);
+    setOriginId(null);
+    setDestId(null);
+    setOriginQ("");
+    setDestQ("");
   };
 
   return (
     <section>
       <div className="flex items-center justify-between mb-2">
         <h2 className="text-xs uppercase tracking-widest text-muted">Trip planner</h2>
-        <button
-          onClick={() => setOpen((o) => !o)}
-          className="text-[10px] font-mono text-muted hover:text-foreground"
-        >
-          {open ? "hide" : "show"}
-        </button>
+        <div className="flex items-center gap-2">
+          {trip && (
+            <button onClick={clear} className="text-[10px] font-mono text-muted hover:text-foreground">
+              clear
+            </button>
+          )}
+          <button
+            onClick={() => setOpen((o) => !o)}
+            className="text-[10px] font-mono text-muted hover:text-foreground"
+          >
+            {open ? "hide" : "show"}
+          </button>
+        </div>
       </div>
       {open && (
         <div className="space-y-2">
-          <StationDatalist id="origin-list" stations={rrStations} />
-          <StationDatalist id="dest-list" stations={rrStations} />
-          <input
-            value={origin}
-            onChange={(e) => setOrigin(e.target.value)}
-            list="origin-list"
-            placeholder="From: Suburban Station"
-            className="w-full bg-background border border-panel-border rounded px-2 py-1.5 text-sm placeholder:text-muted focus:outline-none focus:border-sky-500"
-          />
-          <input
-            value={dest}
-            onChange={(e) => setDest(e.target.value)}
-            list="dest-list"
-            placeholder="To: Trenton"
-            className="w-full bg-background border border-panel-border rounded px-2 py-1.5 text-sm placeholder:text-muted focus:outline-none focus:border-sky-500"
-          />
-          <button
-            onClick={search}
-            disabled={loading || !origin || !dest}
-            className="w-full text-sm py-1.5 rounded border border-panel-border hover:bg-panel-border/40 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? "Looking…" : "Next trains"}
-          </button>
-          {err && <div className="text-xs text-red-400">{err}</div>}
-          {trips && trips.length === 0 && (
-            <div className="text-xs text-muted">No upcoming trips found.</div>
+          {!graphState && !graphErr && (
+            <div className="text-xs text-muted">Loading SEPTA network…</div>
           )}
-          {trips && trips.length > 0 && (
-            <ul className="space-y-2 pt-1">
-              {trips.map((t, i) => (
-                <li
-                  key={i}
-                  className="border border-panel-border rounded px-2.5 py-2 bg-background/40 space-y-1.5"
-                >
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: t.lineColor }} />
-                    <span className="font-mono text-xs text-muted">{t.trainNumber}</span>
-                    <span className="flex-1 truncate">{t.line}</span>
-                    <span className="font-mono text-xs">
-                      {t.origDeparture} → {t.origArrival}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className={t.delay === "On time" ? "text-emerald-300" : "text-amber-300"}>
-                      {t.delay}
-                    </span>
-                    <span className="text-muted">{t.isDirect ? "direct" : "transfer"}</span>
-                  </div>
-                  {t.connection && (
-                    <div className="text-xs text-muted border-t border-panel-border pt-1.5 mt-1.5">
-                      transfer at {t.connection.connectingStation} → {t.connection.trainNumber} (
-                      {t.connection.line}) {t.connection.departure} → {t.connection.arrival}
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ul>
+          {graphErr && <div className="text-xs text-red-400">{graphErr}</div>}
+          {graphState && (
+            <>
+              <StopPicker
+                placeholder="From: any stop"
+                stops={graphState.stops}
+                value={originQ}
+                onChange={(q, id) => {
+                  setOriginQ(q);
+                  setOriginId(id);
+                }}
+              />
+              <StopPicker
+                placeholder="To: any stop"
+                stops={graphState.stops}
+                value={destQ}
+                onChange={(q, id) => {
+                  setDestQ(q);
+                  setDestId(id);
+                }}
+              />
+              <button
+                onClick={findRoute}
+                disabled={!originId || !destId}
+                className="w-full text-sm py-1.5 rounded border border-panel-border hover:bg-panel-border/40 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Find route
+              </button>
+              {err && <div className="text-xs text-red-400">{err}</div>}
+              {trip && <TripDisplay trip={trip} />}
+            </>
           )}
         </div>
       )}
@@ -356,13 +358,99 @@ function TripPlanner() {
   );
 }
 
-function StationDatalist({ id, stations: list }: { id: string; stations: typeof stations }) {
+function StopPicker({
+  placeholder,
+  stops,
+  value,
+  onChange,
+}: {
+  placeholder: string;
+  stops: NetworkStop[];
+  value: string;
+  onChange: (q: string, id: string | null) => void;
+}) {
+  const filtered = useMemo(() => {
+    const q = value.trim().toLowerCase();
+    if (q.length < 2) return [];
+    return stops
+      .filter((s) => s.name.toLowerCase().includes(q))
+      .slice(0, 8);
+  }, [stops, value]);
+
   return (
-    <datalist id={id}>
-      {list.map((s) => (
-        <option key={s.id} value={s.name} />
-      ))}
-    </datalist>
+    <div>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value, null)}
+        placeholder={placeholder}
+        className="w-full bg-background border border-panel-border rounded px-2 py-1.5 text-sm placeholder:text-muted focus:outline-none focus:border-sky-500"
+      />
+      {filtered.length > 0 && (
+        <ul className="mt-1 border border-panel-border rounded divide-y divide-panel-border max-h-48 overflow-y-auto scrollbar-thin">
+          {filtered.map((s) => (
+            <li key={s.id}>
+              <button
+                onClick={() => onChange(s.name, s.id)}
+                className="w-full text-left px-2 py-1.5 text-sm hover:bg-panel-border/40 flex items-center gap-2"
+              >
+                <span className="font-mono text-[9px] text-muted w-16 truncate">
+                  {s.modes.join(",")}
+                </span>
+                <span className="flex-1 truncate">{s.name}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function TripDisplay({ trip }: { trip: Trip }) {
+  return (
+    <div className="border border-panel-border rounded p-2.5 bg-background/40 space-y-2">
+      <div className="flex items-center justify-between text-sm">
+        <span className="font-bold">
+          {Math.round(trip.totalMinutes)} min
+        </span>
+        <span className="text-xs text-muted font-mono">
+          {trip.transfers} transfer{trip.transfers === 1 ? "" : "s"}
+        </span>
+      </div>
+      <ol className="space-y-1.5">
+        {trip.legs.map((leg, i) => (
+          <li key={i} className="flex items-start gap-2 text-xs">
+            {leg.kind === "walk" ? (
+              <>
+                <span className="w-3 h-3 rounded-full shrink-0 bg-muted/40 mt-0.5" />
+                <div className="flex-1">
+                  <div className="text-muted">Walk {Math.round(leg.minutes)} min</div>
+                  <div className="text-muted/70 truncate">→ {leg.toStop.name}</div>
+                </div>
+              </>
+            ) : (
+              <>
+                <span
+                  className="w-3 h-3 rounded-sm shrink-0 mt-0.5"
+                  style={{ background: leg.routeColor }}
+                />
+                <div className="flex-1">
+                  <div>
+                    <span className="font-mono text-[10px] bg-panel-border/60 px-1 rounded mr-1">
+                      {leg.routeShort}
+                    </span>
+                    {leg.routeName}
+                  </div>
+                  <div className="text-muted">
+                    {leg.fromStop.name} → {leg.toStop.name} ({Math.round(leg.minutes)} min)
+                  </div>
+                </div>
+              </>
+            )}
+          </li>
+        ))}
+      </ol>
+    </div>
   );
 }
 
