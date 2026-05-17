@@ -1,0 +1,159 @@
+{
+  "generatedAt": "2026-05-17T22:10:53.305Z",
+  "totalSnapshots": 1,
+  "coverageStart": "2026-05-17T22:10:53.304Z",
+  "headline": {
+    "ts": "2026-05-17T22:10:53.304Z",
+    "trainsInService": 0,
+    "onTimePct": null,
+    "avgDelay": 0,
+    "majorDelays": 0
+  },
+  "lines": [],
+  "hourly": [
+    {
+      "hour": 0,
+      "onTimePct": null,
+      "avgDelay": 0,
+      "samples": 0
+    },
+    {
+      "hour": 1,
+      "onTimePct": null,
+      "avgDelay": 0,
+      "samples": 0
+    },
+    {
+      "hour": 2,
+      "onTimePct": null,
+      "avgDelay": 0,
+      "samples": 0
+    },
+    {
+      "hour": 3,
+      "onTimePct": null,
+      "avgDelay": 0,
+      "samples": 0
+    },
+    {
+      "hour": 4,
+      "onTimePct": null,
+      "avgDelay": 0,
+      "samples": 0
+    },
+    {
+      "hour": 5,
+      "onTimePct": null,
+      "avgDelay": 0,
+      "samples": 0
+    },
+    {
+      "hour": 6,
+      "onTimePct": null,
+      "avgDelay": 0,
+      "samples": 0
+    },
+    {
+      "hour": 7,
+      "onTimePct": null,
+      "avgDelay": 0,
+      "samples": 0
+    },
+    {
+      "hour": 8,
+      "onTimePct": null,
+      "avgDelay": 0,
+      "samples": 0
+    },
+    {
+      "hour": 9,
+      "onTimePct": null,
+      "avgDelay": 0,
+      "samples": 0
+    },
+    {
+      "hour": 10,
+      "onTimePct": null,
+      "avgDelay": 0,
+      "samples": 0
+    },
+    {
+      "hour": 11,
+      "onTimePct": null,
+      "avgDelay": 0,
+      "samples": 0
+    },
+    {
+      "hour": 12,
+      "onTimePct": null,
+      "avgDelay": 0,
+      "samples": 0
+    },
+    {
+      "hour": 13,
+      "onTimePct": null,
+      "avgDelay": 0,
+      "samples": 0
+    },
+    {
+      "hour": 14,
+      "onTimePct": null,
+      "avgDelay": 0,
+      "samples": 0
+    },
+    {
+      "hour": 15,
+      "onTimePct": null,
+      "avgDelay": 0,
+      "samples": 0
+    },
+    {
+      "hour": 16,
+      "onTimePct": null,
+      "avgDelay": 0,
+      "samples": 0
+    },
+    {
+      "hour": 17,
+      "onTimePct": null,
+      "avgDelay": 0,
+      "samples": 0
+    },
+    {
+      "hour": 18,
+      "onTimePct": null,
+      "avgDelay": 0,
+      "samples": 0
+    },
+    {
+      "hour": 19,
+      "onTimePct": null,
+      "avgDelay": 0,
+      "samples": 0
+    },
+    {
+      "hour": 20,
+      "onTimePct": null,
+      "avgDelay": 0,
+      "samples": 0
+    },
+    {
+      "hour": 21,
+      "onTimePct": null,
+      "avgDelay": 0,
+      "samples": 0
+    },
+    {
+      "hour": 22,
+      "onTimePct": null,
+      "avgDelay": 0,
+      "samples": 1
+    },
+    {
+      "hour": 23,
+      "onTimePct": null,
+      "avgDelay": 0,
+      "samples": 0
+    }
+  ]
+}
