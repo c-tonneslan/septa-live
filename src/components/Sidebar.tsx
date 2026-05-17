@@ -176,6 +176,8 @@ function LinePanel({
                   <li key={l.id}>
                     <button
                       onClick={() => onToggleLine(l.id)}
+                      aria-pressed={enabled}
+                      aria-label={`${l.name}${counts ? `, ${counts.total} active, ${counts.late} late` : ""}`}
                       className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded text-left text-sm transition-colors ${
                         enabled ? "hover:bg-panel-border/40" : "opacity-40 hover:opacity-70"
                       }`}

@@ -1,0 +1,64 @@
+name: snapshot
+
+# Every 15 minutes: poll SEPTA, append a summary to data/snapshots.ndjson on
+# the `data` branch, and regenerate public/stats.json there. `data` is a
+# long-lived orphan branch so the commits don't trigger Vercel deploys -
+# the app fetches stats.json from raw.githubusercontent.com at render time.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: snapshot
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main (for the snapshot script)
+        uses: actions/checkout@v4
+        with:
+          path: app
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Check out data branch (orphan if missing)
+        run: |
+          mkdir data-work && cd data-work
+          git init -q
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          if git ls-remote --exit-code origin data >/dev/null 2>&1; then
+            git fetch -q --depth 1 origin data
+            git checkout -q data
+          else
+            git checkout -q --orphan data
+            mkdir -p data public
+            : > data/snapshots.ndjson
+            echo '{}' > public/stats.json
+          fi
+
+      - name: Snapshot
+        working-directory: data-work
+        run: node ../app/scripts/snapshot.mjs
+
+      - name: Commit + push
+        working-directory: data-work
+        run: |
+          git config user.email 'actions@github.com'
+          git config user.name 'snapshot bot'
+          git add data/snapshots.ndjson public/stats.json
+          if ! git diff --cached --quiet; then
+            git commit -q -m "snapshot $(date -u +%Y-%m-%dT%H:%MZ)"
+            git push -q origin data
+          else
+            echo "no changes to commit"
+          fi

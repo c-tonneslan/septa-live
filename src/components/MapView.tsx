@@ -358,5 +358,12 @@ export default function MapView({
     }
   }, [selection, trains, vehicles, stations]);
 
-  return <div ref={containerRef} className="h-full w-full" />;
+  return (
+    <div
+      ref={containerRef}
+      className="h-full w-full"
+      role="application"
+      aria-label="Live SEPTA system map. Use the sidebar to filter lines, search stations, and view live train and vehicle details."
+    />
+  );
 }
