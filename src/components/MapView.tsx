@@ -5,6 +5,7 @@ import L from "leaflet";
 import type { Train, Vehicle } from "@/lib/septa";
 import type { Station } from "@/data/stations";
 import { lines } from "@/data/lines";
+import { lookupBusRoute, type BusRouteData } from "@/data/buses";
 import type { Selection } from "./App";
 
 // Center on City Hall with a zoom that covers Trenton, Newark DE, Doylestown,
@@ -64,6 +65,7 @@ interface Props {
   vehicles: Vehicle[];
   stations: Station[];
   enabledLines: Set<string>;
+  busData: Map<string, BusRouteData>;
   selection: Selection;
   onSelect: (s: Selection) => void;
 }
@@ -73,12 +75,15 @@ export default function MapView({
   vehicles,
   stations,
   enabledLines,
+  busData,
   selection,
   onSelect,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const polylineLayerRef = useRef<L.LayerGroup | null>(null);
+  const busPolylineLayerRef = useRef<L.LayerGroup | null>(null);
+  const busStopLayerRef = useRef<L.LayerGroup | null>(null);
   const stationLayerRef = useRef<L.LayerGroup | null>(null);
   const trainLayerRef = useRef<L.LayerGroup | null>(null);
   const vehicleLayerRef = useRef<L.LayerGroup | null>(null);
@@ -104,8 +109,11 @@ export default function MapView({
       },
     ).addTo(map);
     mapRef.current = map;
-    // Z-ordering: polylines (bottom), stations, vehicles, trains (top).
+    // Z-ordering, bottom to top: bus polylines, rail polylines, bus stops,
+    // rail stations, transit vehicles, RR trains.
+    busPolylineLayerRef.current = L.layerGroup().addTo(map);
     polylineLayerRef.current = L.layerGroup().addTo(map);
+    busStopLayerRef.current = L.layerGroup().addTo(map);
     stationLayerRef.current = L.layerGroup().addTo(map);
     vehicleLayerRef.current = L.layerGroup().addTo(map);
     trainLayerRef.current = L.layerGroup().addTo(map);
@@ -114,6 +122,8 @@ export default function MapView({
       map.remove();
       mapRef.current = null;
       polylineLayerRef.current = null;
+      busPolylineLayerRef.current = null;
+      busStopLayerRef.current = null;
       stationLayerRef.current = null;
       trainLayerRef.current = null;
       vehicleLayerRef.current = null;
@@ -142,6 +152,43 @@ export default function MapView({
       }).addTo(layer);
     }
   }, [enabledLines]);
+
+  // bus polylines + stops, lazy-rendered for whatever routes the user has enabled
+  useEffect(() => {
+    const polyLayer = busPolylineLayerRef.current;
+    const stopLayer = busStopLayerRef.current;
+    if (!polyLayer || !stopLayer) return;
+    polyLayer.clearLayers();
+    stopLayer.clearLayers();
+    for (const [routeId, data] of busData) {
+      const route = lookupBusRoute(routeId);
+      const color = route?.color ?? "#888";
+      if (data.shape.length >= 2) {
+        L.polyline(data.shape, {
+          color,
+          weight: 2.5,
+          opacity: 0.6,
+          dashArray: "4 4",
+          lineCap: "round",
+          lineJoin: "round",
+        }).addTo(polyLayer);
+      }
+      for (const stop of data.stops) {
+        const m = L.circleMarker([stop.lat, stop.lon], {
+          radius: 3,
+          color: color,
+          fillColor: color,
+          fillOpacity: 0.85,
+          weight: 1,
+        });
+        m.bindTooltip(`${route?.short ?? routeId} · ${stop.name}`, {
+          direction: "top",
+          offset: [0, -4],
+        });
+        m.addTo(stopLayer);
+      }
+    }
+  }, [busData]);
 
   // station markers
   useEffect(() => {

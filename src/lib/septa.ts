@@ -5,6 +5,7 @@
 
 import { lookupLine } from "@/data/lines";
 import { lookupStation } from "@/data/stations";
+import { lookupBusRoute } from "@/data/buses";
 
 const BASE = "https://www3.septa.org/api";
 
@@ -125,7 +126,13 @@ export interface Vehicle {
   lat: number;
   lon: number;
   rawRouteId: string;
+  // For rail/trolley vehicles, lineId is the canonical Line.id (BSL, MFL,
+  // T1, etc). For buses, lineId is null and routeId is set to the bus
+  // GTFS route_id (e.g. "33", "47M"). lineColor falls back to the bus
+  // brand color when applicable.
   lineId: string | null;
+  routeId: string | null;
+  isBus: boolean;
   lineColor: string;
   lineShort: string | null;
   destination: string;
@@ -305,8 +312,12 @@ export async function getTransitVehicles(): Promise<Vehicle[]> {
   for (const group of raw.routes) {
     for (const [routeId, vehicles] of Object.entries(group)) {
       const line = lookupLine(routeId);
-      // Skip routes we don't render (every bus route). Keep BSL/MFL/NHSL/trolleys.
-      if (!line || line.mode === "rr") continue;
+      // Skip RR routes (those come from TrainView with richer data).
+      if (line && line.mode === "rr") continue;
+      const bus = !line ? lookupBusRoute(routeId) : null;
+      // Drop routes that aren't in either catalog (TransitView sometimes
+      // emits internal-only routes like training runs).
+      if (!line && !bus) continue;
       for (const v of vehicles) {
         const lat = parseFloatSafe(v.lat);
         const lon = parseFloatSafe(v.lng);
@@ -330,9 +341,11 @@ export async function getTransitVehicles(): Promise<Vehicle[]> {
           lat,
           lon,
           rawRouteId: routeId,
-          lineId: line.id,
-          lineColor: line.color,
-          lineShort: line.short,
+          lineId: line?.id ?? null,
+          routeId: bus ? bus.id : line ? null : null,
+          isBus: !line && !!bus,
+          lineColor: line?.color ?? bus?.color ?? "#888",
+          lineShort: line?.short ?? bus?.short ?? routeId,
           destination: v.destination || "",
           heading: parseFloatSafe(v.heading),
           lateMinutes: typeof v.late === "number" ? v.late : parseFloatSafe(v.late, 0),

@@ -127,23 +127,36 @@ def longest_shape_per_route(trips_text, shapes):
     }
 
 
-def stops_for_route(trips_text, stop_times_text, route_id, direction="0"):
+def build_stop_index(trips_text, stop_times_text):
+    """Parse trips + stop_times once and return a (route_id, direction) ->
+    list[list[stop_id]] index. Iterating per-route was O(routes * N) which
+    is fine for 13 RR routes but blows up at 130+ bus routes."""
     trip_to_route = {}
     trip_dir = {}
     for row in read(trips_text):
         trip_to_route[row["trip_id"]] = row["route_id"]
         trip_dir[row["trip_id"]] = row.get("direction_id", "0")
+
     by_trip = defaultdict(list)
     for row in read(stop_times_text):
-        if trip_to_route.get(row["trip_id"]) != route_id: continue
-        if trip_dir.get(row["trip_id"]) != direction: continue
         try:
             by_trip[row["trip_id"]].append((int(row["stop_sequence"]), row["stop_id"]))
         except (ValueError, KeyError):
             pass
-    if not by_trip: return []
-    best = max(by_trip.values(), key=len)
-    return [sid for _, sid in sorted(best)]
+
+    index = defaultdict(list)
+    for trip_id, stops in by_trip.items():
+        rid = trip_to_route.get(trip_id)
+        if not rid: continue
+        d = trip_dir.get(trip_id, "0")
+        index[(rid, d)].append([sid for _, sid in sorted(stops)])
+    return index
+
+
+def stops_for_route(stop_index, route_id, direction="0"):
+    trips = stop_index.get((route_id, direction)) or stop_index.get((route_id, "0" if direction == "1" else "1"))
+    if not trips: return []
+    return max(trips, key=len)
 
 
 def is_trolley_street_stop(name):
@@ -163,16 +176,34 @@ def ts_coord_array(coords):
     return "[" + ",".join(f"[{a:.5f},{b:.5f}]" for a, b in coords) + "]"
 
 
+def load_routes(text):
+    out = {}
+    for row in read(text):
+        out[row["route_id"]] = {
+            "id": row["route_id"],
+            "short": row.get("route_short_name", "") or row["route_id"],
+            "name": row.get("route_long_name", ""),
+            "color": "#" + (row.get("route_color") or "888888").upper(),
+            "type": row.get("route_type", ""),
+        }
+    return out
+
+
 def main():
     feeds = fetch_gtfs()
 
+    print("parsing rail...", file=sys.stderr)
     rr_stops = load_stops(feeds["rail"]["stops.txt"])
     rr_shapes = load_shapes(feeds["rail"]["shapes.txt"])
     rr_route_shape = longest_shape_per_route(feeds["rail"]["trips.txt"], rr_shapes)
+    rr_stop_index = build_stop_index(feeds["rail"]["trips.txt"], feeds["rail"]["stop_times.txt"])
 
+    print("parsing bus...", file=sys.stderr)
     bus_stops = load_stops(feeds["bus"]["stops.txt"])
     bus_shapes = load_shapes(feeds["bus"]["shapes.txt"])
     bus_route_shape = longest_shape_per_route(feeds["bus"]["trips.txt"], bus_shapes)
+    bus_stop_index = build_stop_index(feeds["bus"]["trips.txt"], feeds["bus"]["stop_times.txt"])
+    bus_routes = load_routes(feeds["bus"]["routes.txt"])
 
     stations = {}
     station_order_by_line = {}
@@ -186,9 +217,9 @@ def main():
         s["apiNames"].add(name)
 
     for (lid, _name, _short, _mode, _color, _api) in RR_LINES:
-        order = stops_for_route(feeds["rail"]["trips.txt"], feeds["rail"]["stop_times.txt"], lid, "0")
+        order = stops_for_route(rr_stop_index, lid, "0")
         if not order:
-            order = stops_for_route(feeds["rail"]["trips.txt"], feeds["rail"]["stop_times.txt"], lid, "1")
+            order = stops_for_route(rr_stop_index, lid, "1")
         out = []
         for sid in order:
             if sid not in rr_stops: continue
@@ -199,9 +230,9 @@ def main():
         station_order_by_line[lid] = out
 
     for (gid, lid, _metro, _name, _short, mode, _color, _api) in METRO_LINES:
-        order = stops_for_route(feeds["bus"]["trips.txt"], feeds["bus"]["stop_times.txt"], gid, "0")
+        order = stops_for_route(bus_stop_index, gid, "0")
         if not order:
-            order = stops_for_route(feeds["bus"]["trips.txt"], feeds["bus"]["stop_times.txt"], gid, "1")
+            order = stops_for_route(bus_stop_index, gid, "1")
         out = []
         for sid in order:
             if sid not in bus_stops: continue
@@ -241,8 +272,68 @@ def main():
               f'shape: {ts_coord_array(shape)} }},')
     print("];")
 
+    # ------------------------------------------------------------------
+    # Bus routes: skip everything already in the metro registry (L1, B1,
+    # M1, T1-T5, D1, D2). Emit two things:
+    #   1. BUS_ROUTES catalog (id, short, name, color) for the sidebar list
+    #   2. A separate public/bus-routes.json with the heavy shape + stops
+    #      payload, fetched lazily by the client.
+    # ------------------------------------------------------------------
+    metro_gtfs_ids = {gid for (gid, *_) in METRO_LINES}
+    metro_gtfs_ids.update({"B2", "D1_BUS", "D2_BUS"})  # express + emergency-bus variants
+
+    bus_catalog = []
+    bus_payload = {}
+    for rid, info in bus_routes.items():
+        if rid in metro_gtfs_ids: continue
+        if info["type"] != "3": continue  # GTFS route_type 3 = bus
+        order = stops_for_route(bus_stop_index, rid, "0") or stops_for_route(bus_stop_index, rid, "1")
+        shape = bus_route_shape.get(rid, [])
+        if not order and not shape: continue
+        # Catalog entry (no shape/stops, just headline metadata)
+        bus_catalog.append({
+            "id": rid,
+            "short": info["short"],
+            "name": info["name"],
+            "color": info["color"],
+        })
+        # Payload entry (full geometry + stop list)
+        bus_payload[rid] = {
+            "shape": [[round(la, 5), round(lo, 5)] for (la, lo) in shape],
+            "stops": [
+                {
+                    "id": sid,
+                    "name": bus_stops[sid]["name"],
+                    "lat": round(bus_stops[sid]["lat"], 5),
+                    "lon": round(bus_stops[sid]["lon"], 5),
+                }
+                for sid in order if sid in bus_stops
+            ],
+        }
+
+    bus_catalog.sort(key=lambda r: (
+        # Numeric routes first by number, then everything else alphabetic
+        (0, int(r["short"])) if r["short"].isdigit() else (1, r["short"]),
+    ))
+
+    print()
+    print("export const BUS_ROUTES = [")
+    for r in bus_catalog:
+        print(f'  {{ id: {ts_string(r["id"])}, short: {ts_string(r["short"])}, '
+              f'name: {ts_string(r["name"])}, color: {ts_string(r["color"])} }},')
+    print("];")
+
+    # Write public/bus-routes.json
+    out_path = os.path.join(os.path.dirname(__file__), "..", "public", "bus-routes.json")
+    out_path = os.path.abspath(out_path)
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    with open(out_path, "w") as f:
+        json.dump(bus_payload, f, separators=(",", ":"))
+    print(f"wrote {out_path} ({len(bus_payload)} routes)", file=sys.stderr)
+
     print(f"stations: {len(stations)}", file=sys.stderr)
     print(f"lines: {len(RR_LINES) + len(METRO_LINES)}", file=sys.stderr)
+    print(f"bus routes: {len(bus_catalog)}", file=sys.stderr)
 
 
 if __name__ == "__main__":

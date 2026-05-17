@@ -7,6 +7,7 @@ import AlertsBar from "./AlertsBar";
 import type { Train, Vehicle, Alert, ElevatorOutage } from "@/lib/septa";
 import { lines } from "@/data/lines";
 import { stations } from "@/data/stations";
+import { loadBusData, type BusRouteData } from "@/data/buses";
 
 const MapView = dynamic(() => import("./MapView"), {
   ssr: false,
@@ -37,6 +38,8 @@ export default function App() {
   const [enabledLines, setEnabledLines] = useState<Set<string>>(
     () => new Set(lines.map((l) => l.id)),
   );
+  const [enabledBusRoutes, setEnabledBusRoutes] = useState<Set<string>>(() => new Set());
+  const [busData, setBusData] = useState<Record<string, BusRouteData> | null>(null);
   const [selection, setSelection] = useState<Selection>(null);
   const inflightTrains = useRef<AbortController | null>(null);
   const inflightVehicles = useRef<AbortController | null>(null);
@@ -108,20 +111,41 @@ export default function App() {
     return () => clearInterval(t);
   }, [pullElevators]);
 
+  // Lazy-load the heavy bus shape/stops payload the first time a bus route is
+  // enabled (and never if the user stays in rail-only mode).
+  useEffect(() => {
+    if (enabledBusRoutes.size === 0 || busData) return;
+    loadBusData().then(setBusData).catch(() => {});
+  }, [enabledBusRoutes, busData]);
+
   const visibleTrains = useMemo(
     () => trains.filter((t) => (t.lineId ? enabledLines.has(t.lineId) : true)),
     [trains, enabledLines],
   );
 
   const visibleVehicles = useMemo(
-    () => vehicles.filter((v) => v.lineId && enabledLines.has(v.lineId)),
-    [vehicles, enabledLines],
+    () =>
+      vehicles.filter((v) => {
+        if (v.isBus) return v.routeId ? enabledBusRoutes.has(v.routeId) : false;
+        return v.lineId ? enabledLines.has(v.lineId) : false;
+      }),
+    [vehicles, enabledLines, enabledBusRoutes],
   );
 
   const visibleStations = useMemo(
     () => stations.filter((s) => s.lineIds.some((id) => enabledLines.has(id))),
     [enabledLines],
   );
+
+  const enabledBusData = useMemo(() => {
+    if (!busData) return new Map<string, BusRouteData>();
+    const out = new Map<string, BusRouteData>();
+    for (const rid of enabledBusRoutes) {
+      const d = busData[rid];
+      if (d) out.set(rid, d);
+    }
+    return out;
+  }, [busData, enabledBusRoutes]);
 
   const toggleLine = useCallback((id: string) => {
     setEnabledLines((prev) => {
@@ -149,6 +173,17 @@ export default function App() {
     });
   }, []);
 
+  const toggleBusRoute = useCallback((id: string) => {
+    setEnabledBusRoutes((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const clearBusRoutes = useCallback(() => setEnabledBusRoutes(new Set()), []);
+
   return (
     <div className="h-full w-full flex flex-col">
       <AlertsBar alerts={alerts} elevators={elevators} />
@@ -159,6 +194,7 @@ export default function App() {
             vehicles={visibleVehicles}
             stations={visibleStations}
             enabledLines={enabledLines}
+            busData={enabledBusData}
             selection={selection}
             onSelect={setSelection}
           />
@@ -167,15 +203,19 @@ export default function App() {
             trainCount={visibleTrains.length}
             trainTotal={trains.length}
             vehicleCount={visibleVehicles.length}
+            busRouteCount={enabledBusRoutes.size}
           />
         </div>
         <Sidebar
           trains={trains}
           vehicles={vehicles}
           enabledLines={enabledLines}
+          enabledBusRoutes={enabledBusRoutes}
           onToggleLine={toggleLine}
           onSetAllLines={setAllLines}
           onSetModeLines={setModeLines}
+          onToggleBusRoute={toggleBusRoute}
+          onClearBusRoutes={clearBusRoutes}
           selection={selection}
           onSelect={setSelection}
         />
@@ -189,11 +229,13 @@ function Legend({
   trainCount,
   trainTotal,
   vehicleCount,
+  busRouteCount,
 }: {
   trainsAt: string | null;
   trainCount: number;
   trainTotal: number;
   vehicleCount: number;
+  busRouteCount: number;
 }) {
   const stamp = trainsAt ? new Date(trainsAt).toLocaleTimeString() : "—";
   return (
@@ -204,6 +246,7 @@ function Legend({
       </div>
       <div className="text-muted">
         RR: {trainCount}/{trainTotal} · transit: {vehicleCount}
+        {busRouteCount > 0 && ` · ${busRouteCount} bus routes`}
       </div>
       <div className="flex items-center gap-3 pt-1 border-t border-panel-border mt-1">
         <span className="flex items-center gap-1.5">

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { lines, type Mode } from "@/data/lines";
 import { stations, lookupStation } from "@/data/stations";
+import { busRoutes, lookupBusRoute } from "@/data/buses";
 import type { Train, Vehicle, StationArrivals } from "@/lib/septa";
 import type { Selection } from "./App";
 
@@ -10,9 +11,12 @@ interface Props {
   trains: Train[];
   vehicles: Vehicle[];
   enabledLines: Set<string>;
+  enabledBusRoutes: Set<string>;
   onToggleLine: (id: string) => void;
   onSetAllLines: (on: boolean) => void;
   onSetModeLines: (modes: Mode[], on: boolean) => void;
+  onToggleBusRoute: (id: string) => void;
+  onClearBusRoutes: () => void;
   selection: Selection;
   onSelect: (s: Selection) => void;
 }
@@ -27,9 +31,12 @@ export default function Sidebar({
   trains,
   vehicles,
   enabledLines,
+  enabledBusRoutes,
   onToggleLine,
   onSetAllLines,
   onSetModeLines,
+  onToggleBusRoute,
+  onClearBusRoutes,
   selection,
   onSelect,
 }: Props) {
@@ -55,9 +62,12 @@ export default function Sidebar({
             trains={trains}
             vehicles={vehicles}
             enabledLines={enabledLines}
+            enabledBusRoutes={enabledBusRoutes}
             onToggleLine={onToggleLine}
             onSetAllLines={onSetAllLines}
             onSetModeLines={onSetModeLines}
+            onToggleBusRoute={onToggleBusRoute}
+            onClearBusRoutes={onClearBusRoutes}
             onSelect={onSelect}
           />
         )}
@@ -70,17 +80,23 @@ function LinePanel({
   trains,
   vehicles,
   enabledLines,
+  enabledBusRoutes,
   onToggleLine,
   onSetAllLines,
   onSetModeLines,
+  onToggleBusRoute,
+  onClearBusRoutes,
   onSelect,
 }: {
   trains: Train[];
   vehicles: Vehicle[];
   enabledLines: Set<string>;
+  enabledBusRoutes: Set<string>;
   onToggleLine: (id: string) => void;
   onSetAllLines: (on: boolean) => void;
   onSetModeLines: (modes: Mode[], on: boolean) => void;
+  onToggleBusRoute: (id: string) => void;
+  onClearBusRoutes: () => void;
   onSelect: (s: Selection) => void;
 }) {
   const countsByLine = useMemo(() => {
@@ -206,11 +222,146 @@ function LinePanel({
         </section>
       )}
 
+      <BusPanel
+        vehicles={vehicles}
+        enabledBusRoutes={enabledBusRoutes}
+        onToggleBusRoute={onToggleBusRoute}
+        onClearBusRoutes={onClearBusRoutes}
+      />
+
       <section>
         <h2 className="text-xs uppercase tracking-widest text-muted mb-2">Find a station</h2>
         <StationPicker onPick={(id) => onSelect({ kind: "station", id })} />
       </section>
     </div>
+  );
+}
+
+function BusPanel({
+  vehicles,
+  enabledBusRoutes,
+  onToggleBusRoute,
+  onClearBusRoutes,
+}: {
+  vehicles: Vehicle[];
+  enabledBusRoutes: Set<string>;
+  onToggleBusRoute: (id: string) => void;
+  onClearBusRoutes: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+
+  const busesByRoute = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const v of vehicles) {
+      if (!v.isBus || !v.routeId) continue;
+      m.set(v.routeId, (m.get(v.routeId) ?? 0) + 1);
+    }
+    return m;
+  }, [vehicles]);
+
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return busRoutes.filter((r) => {
+      if (!needle) return true;
+      return (
+        r.short.toLowerCase().includes(needle) ||
+        r.name.toLowerCase().includes(needle) ||
+        r.id.toLowerCase().includes(needle)
+      );
+    });
+  }, [q]);
+
+  const enabledList = useMemo(
+    () => Array.from(enabledBusRoutes).map(lookupBusRoute).filter((r): r is NonNullable<typeof r> => r !== null),
+    [enabledBusRoutes],
+  );
+
+  return (
+    <section>
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-xs uppercase tracking-widest text-muted">
+          Buses{" "}
+          <span className="text-muted/60 font-mono normal-case tracking-normal">
+            ({busRoutes.length})
+          </span>
+        </h2>
+        <div className="flex items-center gap-2">
+          {enabledBusRoutes.size > 0 && (
+            <button
+              onClick={onClearBusRoutes}
+              className="text-[10px] font-mono text-muted hover:text-foreground"
+            >
+              clear ({enabledBusRoutes.size})
+            </button>
+          )}
+          <button
+            onClick={() => setOpen((o) => !o)}
+            className="text-[10px] font-mono text-muted hover:text-foreground"
+          >
+            {open ? "hide" : "show"}
+          </button>
+        </div>
+      </div>
+
+      {enabledList.length > 0 && (
+        <ul className="space-y-0.5 mb-2">
+          {enabledList.map((r) => (
+            <li key={r.id}>
+              <button
+                onClick={() => onToggleBusRoute(r.id)}
+                className="w-full flex items-center gap-2 px-2 py-1 rounded text-left text-sm bg-panel-border/30 hover:bg-panel-border/50"
+              >
+                <span className="w-3 h-3 rounded-sm shrink-0" style={{ background: r.color }} />
+                <span className="font-mono text-xs w-10">{r.short}</span>
+                <span className="flex-1 truncate text-xs text-muted">{r.name}</span>
+                <span className="font-mono text-xs text-muted">
+                  {busesByRoute.get(r.id) ?? 0}
+                </span>
+                <span className="text-muted hover:text-foreground">×</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {open && (
+        <>
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="33, City Hall, Frankford…"
+            className="w-full bg-background border border-panel-border rounded px-2 py-1.5 text-sm placeholder:text-muted focus:outline-none focus:border-sky-500 mb-2"
+          />
+          <ul className="space-y-0.5 max-h-80 overflow-y-auto scrollbar-thin">
+            {filtered.slice(0, 200).map((r) => {
+              const enabled = enabledBusRoutes.has(r.id);
+              const count = busesByRoute.get(r.id);
+              return (
+                <li key={r.id}>
+                  <button
+                    onClick={() => onToggleBusRoute(r.id)}
+                    className={`w-full flex items-center gap-2 px-2 py-1 rounded text-left text-sm transition-colors ${
+                      enabled ? "bg-panel-border/40" : "hover:bg-panel-border/30"
+                    }`}
+                  >
+                    <span className="w-3 h-3 rounded-sm shrink-0" style={{ background: r.color }} />
+                    <span className="font-mono text-xs w-10">{r.short}</span>
+                    <span className="flex-1 truncate text-xs text-muted">{r.name}</span>
+                    {count !== undefined && count > 0 && (
+                      <span className="font-mono text-[10px] text-emerald-300">{count}</span>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
+            {filtered.length === 0 && (
+              <li className="text-xs text-muted text-center py-2">no routes match</li>
+            )}
+          </ul>
+        </>
+      )}
+    </section>
   );
 }
 
