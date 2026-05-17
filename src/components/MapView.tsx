@@ -4,7 +4,6 @@ import { useEffect, useRef } from "react";
 import L from "leaflet";
 import type { Train, Vehicle } from "@/lib/septa";
 import type { Station } from "@/data/stations";
-import { lookupStationById } from "@/data/stations";
 import { lines } from "@/data/lines";
 import type { Selection } from "./App";
 
@@ -13,7 +12,14 @@ import type { Selection } from "./App";
 const CENTER: [number, number] = [40.005, -75.16];
 const INITIAL_ZOOM = 10;
 
-const HUB_IDS = new Set(["30th-st", "suburban", "jefferson", "temple-u"]);
+// RR Center City hub stations and 69th St / Frankford / Norristown — the
+// terminal-class stations that get a slightly larger marker so they pop on
+// the map.
+const HUB_IDS = new Set([
+  "rr-90004", "rr-90005", "rr-90006", "rr-90007", // 30th, Suburban, Jefferson, Temple
+  "m-416", "m-61", "m-31790", "m-30520",          // 69th St TC (MFL), Frankford TC, 69th NHSL, Norristown TC
+  "m-1281", "m-152", "m-20965",                   // City Hall BSL, NRG, Fern Rock
+]);
 
 function trainIcon(t: Train, selected: boolean): L.DivIcon {
   const cls =
@@ -116,24 +122,18 @@ export default function MapView({
     };
   }, []);
 
-  // polylines per enabled line (cheap to redraw, lines don't move)
+  // polylines per enabled line, using GTFS shape geometry so the lines trace
+  // the actual track / street, not just station-to-station straight cuts.
   useEffect(() => {
     const layer = polylineLayerRef.current;
     if (!layer) return;
     layer.clearLayers();
     for (const line of lines) {
       if (!enabledLines.has(line.id)) continue;
-      if (line.stationOrder.length < 2) continue;
-      const coords: [number, number][] = [];
-      for (const id of line.stationOrder) {
-        const s = lookupStationById(id);
-        if (s) coords.push([s.lat, s.lon]);
-      }
-      if (coords.length < 2) continue;
-      // Subway + RR a hair thicker than trolleys so they read above them.
-      const weight = line.mode === "rr" ? 3 : line.mode === "trolley" ? 2.5 : 4;
-      const opacity = line.mode === "rr" ? 0.7 : 0.85;
-      L.polyline(coords, {
+      if (line.shape.length < 2) continue;
+      const weight = line.mode === "rr" ? 2.5 : line.mode === "trolley" || line.mode === "suburban-trolley" ? 3 : 4;
+      const opacity = line.mode === "rr" ? 0.75 : 0.9;
+      L.polyline(line.shape, {
         color: line.color,
         weight,
         opacity,

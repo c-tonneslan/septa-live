@@ -301,6 +301,7 @@ export async function getTransitVehicles(): Promise<Vehicle[]> {
   if (!raw?.routes) return [];
 
   const out: Vehicle[] = [];
+  const seen = new Set<string>();
   for (const group of raw.routes) {
     for (const [routeId, vehicles] of Object.entries(group)) {
       const line = lookupLine(routeId);
@@ -310,9 +311,22 @@ export async function getTransitVehicles(): Promise<Vehicle[]> {
         const lat = parseFloatSafe(v.lat);
         const lon = parseFloatSafe(v.lng);
         if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+        // SEPTA occasionally reports vehicles with VehicleID="None" (apprentice
+        // runs, ghosts, freshly-dispatched units), so VehicleID alone isn't
+        // unique. trip + block disambiguates because two vehicles can't share
+        // a block schedule. Fall back to lat/lon when the upstream gives us
+        // nothing useful at all.
+        const idParts = [
+          routeId,
+          v.VehicleID || v.label || "x",
+          v.trip || v.BlockID || `${lat.toFixed(4)},${lon.toFixed(4)}`,
+        ];
+        let id = idParts.join("-");
+        if (seen.has(id)) id = `${id}-${out.length}`;
+        seen.add(id);
         out.push({
-          id: `${routeId}-${v.VehicleID || v.label}`,
-          label: v.label || v.VehicleID,
+          id,
+          label: v.label || v.VehicleID || "—",
           lat,
           lon,
           rawRouteId: routeId,
