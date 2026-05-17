@@ -236,13 +236,14 @@ export default function MapView({
     }
   }, [trains, selection, onSelect]);
 
-  // transit vehicle markers (BSL/MFL/NHSL/trolleys)
+  // transit vehicle markers (BSL/MFL/NHSL/trolleys/buses).
+  // The parent already filtered visibility (enabledLines for rail/trolley,
+  // enabledBusRoutes for buses), so just render whatever's in `vehicles`.
   useEffect(() => {
     const layer = vehicleLayerRef.current;
     if (!layer) return;
     const seen = new Set<string>();
     for (const v of vehicles) {
-      if (!v.lineId || !enabledLines.has(v.lineId)) continue;
       seen.add(v.id);
       const selected = selection?.kind === "vehicle" && selection.id === v.id;
       const existing = vehicleMarkers.current.get(v.id);
@@ -267,7 +268,7 @@ export default function MapView({
         vehicleMarkers.current.delete(id);
       }
     }
-  }, [vehicles, enabledLines, selection, onSelect]);
+  }, [vehicles, selection, onSelect]);
 
   // fly to selection
   useEffect(() => {
