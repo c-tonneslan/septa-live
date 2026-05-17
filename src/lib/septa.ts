@@ -105,6 +105,7 @@ export interface StationArrivals {
   generatedAt: string;
   northbound: Arrival[];
   southbound: Arrival[];
+  note?: string;
 }
 
 export interface Alert {
@@ -168,20 +169,47 @@ export async function getTrains(): Promise<Train[]> {
 export async function getArrivals(
   stationName: string,
   results = 8,
-): Promise<StationArrivals | null> {
+): Promise<StationArrivals> {
   const station = lookupStation(stationName);
   // The upstream Arrivals endpoint matches case-sensitively on the canonical
   // station name. Use the curated canonical when available, fall back to the
   // user-supplied string otherwise.
   const canonical = station?.name ?? stationName;
+
+  // Short-circuit: SEPTA's Arrivals API is Regional Rail only. Subway stations
+  // would 500 upstream with an "invalid parameter" error, so skip the call and
+  // return a clean empty payload with a note the UI can render.
+  if (station && !station.lineIds.some((id) => lookupLine(id)?.mode === "rr")) {
+    return {
+      station: canonical,
+      generatedAt: new Date().toISOString(),
+      northbound: [],
+      southbound: [],
+      note: "SEPTA's public Arrivals API only covers Regional Rail. Subway realtime isn't published.",
+    };
+  }
+
   const url = `${BASE}/Arrivals/index.php?station=${encodeURIComponent(canonical)}&results=${results}`;
-  const raw = await fetchJson<Record<string, Array<{ Northbound?: RawArrival[]; Southbound?: RawArrival[] }>>>(url);
-  if (!raw) return null;
+  const raw = await fetchJson<Record<string, unknown>>(url);
+
+  const empty = (note?: string): StationArrivals => ({
+    station: canonical,
+    generatedAt: new Date().toISOString(),
+    northbound: [],
+    southbound: [],
+    note,
+  });
+
+  if (!raw) return empty("Couldn't reach SEPTA. Try again in a moment.");
+  if (typeof raw === "object" && raw !== null && "error" in raw) {
+    return empty(typeof raw.error === "string" ? raw.error : undefined);
+  }
 
   // Upstream wraps the array in a key like "Suburban Station Departures: ...".
   const topKey = Object.keys(raw)[0];
-  if (!topKey) return null;
-  const payload = raw[topKey];
+  if (!topKey) return empty();
+  const payload = raw[topKey] as Array<{ Northbound?: RawArrival[]; Southbound?: RawArrival[] }>;
+  if (!Array.isArray(payload)) return empty();
   const generatedAt = topKey.split(": ").slice(1).join(": ") || new Date().toISOString();
 
   let north: RawArrival[] = [];

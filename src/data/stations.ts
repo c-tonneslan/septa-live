@@ -5,7 +5,7 @@
 // disagree (Gray 30th Street vs 30th Street Station vs Penn Medicine Station
 // for the same platforms).
 
-import { type Line, lookupLine } from "./lines";
+import { type Line, type Mode, lookupLine } from "./lines";
 
 export interface Station {
   id: string;
@@ -14,6 +14,22 @@ export interface Station {
   lon: number;
   lineIds: string[];
   apiNames: string[];
+}
+
+// SEPTA's Arrivals endpoint is Regional Rail only. A station counts as "RR" if
+// any of its line modes is "rr"; pure-subway stations (BSL, MFL) won't have
+// realtime arrivals from the public API.
+export function stationModes(s: Station): Mode[] {
+  const modes = new Set<Mode>();
+  for (const id of s.lineIds) {
+    const line = lookupLine(id);
+    if (line) modes.add(line.mode);
+  }
+  return [...modes];
+}
+
+export function hasRegionalRail(s: Station): boolean {
+  return stationModes(s).includes("rr");
 }
 
 const stations: Station[] = [

@@ -326,9 +326,14 @@ function StationDetail({ stationId }: { stationId: string }) {
 
       {data && (
         <div className="space-y-4">
+          {data.note && (
+            <div className="text-xs text-muted border border-panel-border rounded px-2.5 py-2 bg-background/40">
+              {data.note}
+            </div>
+          )}
           <ArrivalsList title="Northbound" arrivals={data.northbound} />
           <ArrivalsList title="Southbound" arrivals={data.southbound} />
-          {data.northbound.length === 0 && data.southbound.length === 0 && (
+          {!data.note && data.northbound.length === 0 && data.southbound.length === 0 && (
             <div className="text-sm text-muted">No upcoming arrivals reported.</div>
           )}
         </div>
