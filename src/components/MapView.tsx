@@ -79,6 +79,17 @@ export default function MapView({
   selection,
   onSelect,
 }: Props) {
+  // When a vehicle/train is selected, dim every other line so its route pops.
+  const highlightedLineId = (() => {
+    if (!selection) return null;
+    if (selection.kind === "train") return trains.find((t) => t.id === selection.id)?.lineId ?? null;
+    if (selection.kind === "vehicle") return vehicles.find((v) => v.id === selection.id)?.lineId ?? null;
+    return null;
+  })();
+  const highlightedBusRouteId = (() => {
+    if (!selection || selection.kind !== "vehicle") return null;
+    return vehicles.find((v) => v.id === selection.id)?.routeId ?? null;
+  })();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const polylineLayerRef = useRef<L.LayerGroup | null>(null);
@@ -89,6 +100,47 @@ export default function MapView({
   const vehicleLayerRef = useRef<L.LayerGroup | null>(null);
   const trainMarkers = useRef<Map<string, L.Marker>>(new Map());
   const vehicleMarkers = useRef<Map<string, L.Marker>>(new Map());
+  // Tween state: between SEPTA polls (15s apart), interpolate each marker
+  // from its last known position toward the new one so trains/buses glide
+  // instead of jumping. A single RAF loop processes every active tween.
+  const tweens = useRef<Map<string, { marker: L.Marker; fromLat: number; fromLon: number; toLat: number; toLon: number; start: number; duration: number }>>(new Map());
+  const rafRef = useRef<number | null>(null);
+
+  const startTickLoop = () => {
+    if (rafRef.current !== null) return;
+    const tick = () => {
+      const now = performance.now();
+      const tw = tweens.current;
+      if (tw.size === 0) {
+        rafRef.current = null;
+        return;
+      }
+      for (const [id, t] of tw) {
+        const p = Math.min(1, (now - t.start) / t.duration);
+        const lat = t.fromLat + (t.toLat - t.fromLat) * p;
+        const lon = t.fromLon + (t.toLon - t.fromLon) * p;
+        t.marker.setLatLng([lat, lon]);
+        if (p >= 1) tw.delete(id);
+      }
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+  };
+
+  const tweenMarkerTo = (id: string, marker: L.Marker, to: [number, number], duration = 14_500) => {
+    const from = marker.getLatLng();
+    if (from.lat === to[0] && from.lng === to[1]) return;
+    tweens.current.set(id, {
+      marker,
+      fromLat: from.lat,
+      fromLon: from.lng,
+      toLat: to[0],
+      toLon: to[1],
+      start: performance.now(),
+      duration,
+    });
+    startTickLoop();
+  };
 
   // one-time init
   useEffect(() => {
@@ -129,6 +181,11 @@ export default function MapView({
       vehicleLayerRef.current = null;
       trainMarkers.current.clear();
       vehicleMarkers.current.clear();
+      tweens.current.clear();
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
     };
   }, []);
 
@@ -138,11 +195,15 @@ export default function MapView({
     const layer = polylineLayerRef.current;
     if (!layer) return;
     layer.clearLayers();
+    const anyHighlight = highlightedLineId !== null || highlightedBusRouteId !== null;
     for (const line of lines) {
       if (!enabledLines.has(line.id)) continue;
       if (line.shape.length < 2) continue;
-      const weight = line.mode === "rr" ? 2.5 : line.mode === "trolley" || line.mode === "suburban-trolley" ? 3 : 4;
-      const opacity = line.mode === "rr" ? 0.75 : 0.9;
+      const isHighlighted = line.id === highlightedLineId;
+      const baseWeight = line.mode === "rr" ? 2.5 : line.mode === "trolley" || line.mode === "suburban-trolley" ? 3 : 4;
+      const baseOpacity = line.mode === "rr" ? 0.75 : 0.9;
+      const weight = anyHighlight && isHighlighted ? baseWeight + 1.5 : baseWeight;
+      const opacity = anyHighlight ? (isHighlighted ? 1 : 0.18) : baseOpacity;
       L.polyline(line.shape, {
         color: line.color,
         weight,
@@ -151,7 +212,7 @@ export default function MapView({
         lineJoin: "round",
       }).addTo(layer);
     }
-  }, [enabledLines]);
+  }, [enabledLines, highlightedLineId, highlightedBusRouteId]);
 
   // bus polylines + stops, lazy-rendered for whatever routes the user has enabled
   useEffect(() => {
@@ -160,14 +221,18 @@ export default function MapView({
     if (!polyLayer || !stopLayer) return;
     polyLayer.clearLayers();
     stopLayer.clearLayers();
+    const anyHighlight = highlightedLineId !== null || highlightedBusRouteId !== null;
     for (const [routeId, data] of busData) {
       const route = lookupBusRoute(routeId);
       const color = route?.color ?? "#F59E0B";
+      const isHighlighted = routeId === highlightedBusRouteId;
+      const opacity = anyHighlight ? (isHighlighted ? 1 : 0.18) : 0.9;
+      const weight = anyHighlight && isHighlighted ? 5 : 3.5;
       if (data.shape.length >= 2) {
         L.polyline(data.shape, {
           color,
-          weight: 3.5,
-          opacity: 0.9,
+          weight,
+          opacity,
           lineCap: "round",
           lineJoin: "round",
         }).addTo(polyLayer);
@@ -177,8 +242,9 @@ export default function MapView({
           radius: 3,
           color,
           fillColor: color,
-          fillOpacity: 0.9,
+          fillOpacity: anyHighlight && !isHighlighted ? 0.25 : 0.9,
           weight: 1,
+          opacity: anyHighlight && !isHighlighted ? 0.3 : 1,
         });
         m.bindTooltip(`${route?.short ?? routeId} · ${stop.name}`, {
           direction: "top",
@@ -187,7 +253,7 @@ export default function MapView({
         m.addTo(stopLayer);
       }
     }
-  }, [busData]);
+  }, [busData, highlightedLineId, highlightedBusRouteId]);
 
   // station markers
   useEffect(() => {
@@ -213,7 +279,7 @@ export default function MapView({
       const selected = selection?.kind === "train" && selection.id === t.id;
       const existing = trainMarkers.current.get(t.id);
       if (existing) {
-        existing.setLatLng([t.lat, t.lon]);
+        tweenMarkerTo(`t-${t.id}`, existing, [t.lat, t.lon]);
         existing.setIcon(trainIcon(t, selected));
       } else {
         const m = L.marker([t.lat, t.lon], { icon: trainIcon(t, selected) });
@@ -231,6 +297,7 @@ export default function MapView({
       if (!seen.has(id)) {
         layer.removeLayer(marker);
         trainMarkers.current.delete(id);
+        tweens.current.delete(`t-${id}`);
       }
     }
   }, [trains, selection, onSelect]);
@@ -247,7 +314,7 @@ export default function MapView({
       const selected = selection?.kind === "vehicle" && selection.id === v.id;
       const existing = vehicleMarkers.current.get(v.id);
       if (existing) {
-        existing.setLatLng([v.lat, v.lon]);
+        tweenMarkerTo(`v-${v.id}`, existing, [v.lat, v.lon]);
         existing.setIcon(vehicleIcon(v, selected));
       } else {
         const m = L.marker([v.lat, v.lon], { icon: vehicleIcon(v, selected) });
@@ -265,6 +332,7 @@ export default function MapView({
       if (!seen.has(id)) {
         layer.removeLayer(marker);
         vehicleMarkers.current.delete(id);
+        tweens.current.delete(`v-${id}`);
       }
     }
   }, [vehicles, selection, onSelect]);

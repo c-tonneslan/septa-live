@@ -184,11 +184,31 @@ export default function App() {
 
   const clearBusRoutes = useCallback(() => setEnabledBusRoutes(new Set()), []);
 
+  const [sheetState, setSheetState] = useState<"peek" | "half" | "full">("peek");
+  const cycleSheet = useCallback(
+    () =>
+      setSheetState((s) => (s === "peek" ? "half" : s === "half" ? "full" : "peek")),
+    [],
+  );
+
+  // Auto-pop the bottom sheet open whenever the user picks something so the
+  // detail panel isn't hidden behind a 64px peek strip on phones.
+  useEffect(() => {
+    if (selection) setSheetState((s) => (s === "peek" ? "half" : s));
+  }, [selection]);
+
+  const sheetHeightClass =
+    sheetState === "peek"
+      ? "h-16"
+      : sheetState === "half"
+        ? "h-[60vh]"
+        : "h-[calc(100%-1rem)]";
+
   return (
     <div className="h-full w-full flex flex-col">
       <AlertsBar alerts={alerts} elevators={elevators} />
-      <div className="flex-1 grid grid-cols-1 md:grid-cols-[1fr_380px] min-h-0">
-        <div className="relative min-h-0">
+      <div className="flex-1 flex flex-col md:flex-row min-h-0 relative">
+        <div className="flex-1 relative min-h-0">
           <MapView
             trains={visibleTrains}
             vehicles={visibleVehicles}
@@ -206,19 +226,48 @@ export default function App() {
             busRouteCount={enabledBusRoutes.size}
           />
         </div>
-        <Sidebar
-          trains={trains}
-          vehicles={vehicles}
-          enabledLines={enabledLines}
-          enabledBusRoutes={enabledBusRoutes}
-          onToggleLine={toggleLine}
-          onSetAllLines={setAllLines}
-          onSetModeLines={setModeLines}
-          onToggleBusRoute={toggleBusRoute}
-          onClearBusRoutes={clearBusRoutes}
-          selection={selection}
-          onSelect={setSelection}
-        />
+
+        {/* Sidebar/bottom-sheet wrapper. On desktop it's a fixed-width right
+            column; on mobile it floats over the map and the user can cycle
+            its height with the handle button. */}
+        <div
+          className={`
+            absolute inset-x-0 bottom-0 z-[500] flex flex-col bg-panel
+            border-t border-panel-border shadow-[0_-8px_24px_rgba(0,0,0,0.4)]
+            transition-[height] duration-200 ease-out
+            md:static md:w-[380px] md:h-full md:border-t-0 md:border-l md:shadow-none
+            ${sheetHeightClass}
+          `}
+        >
+          <button
+            onClick={cycleSheet}
+            className="md:hidden w-full py-2 px-4 text-left flex items-center justify-between border-b border-panel-border"
+            aria-label={`Bottom sheet (${sheetState}) — tap to expand`}
+          >
+            <span className="flex flex-col gap-1.5">
+              <span className="h-1 w-10 rounded-full bg-muted/40 self-center" />
+            </span>
+            <span className="text-xs font-mono text-muted">
+              {sheetState === "peek" ? "tap to expand" : sheetState === "half" ? "expand" : "collapse"}
+            </span>
+          </button>
+
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <Sidebar
+              trains={trains}
+              vehicles={vehicles}
+              enabledLines={enabledLines}
+              enabledBusRoutes={enabledBusRoutes}
+              onToggleLine={toggleLine}
+              onSetAllLines={setAllLines}
+              onSetModeLines={setModeLines}
+              onToggleBusRoute={toggleBusRoute}
+              onClearBusRoutes={clearBusRoutes}
+              selection={selection}
+              onSelect={setSelection}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );

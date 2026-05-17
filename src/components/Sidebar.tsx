@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { lines, type Mode } from "@/data/lines";
-import { stations, lookupStation } from "@/data/stations";
+import { stations, lookupStation, hasRegionalRail } from "@/data/stations";
 import { busRoutes, lookupBusRoute } from "@/data/buses";
-import type { Train, Vehicle, StationArrivals } from "@/lib/septa";
+import type { Train, Vehicle, StationArrivals, NextToArrive } from "@/lib/septa";
 import type { Selection } from "./App";
 
 interface Props {
@@ -41,7 +41,7 @@ export default function Sidebar({
   onSelect,
 }: Props) {
   return (
-    <aside className="bg-panel border-l border-panel-border h-full min-h-0 flex flex-col">
+    <aside className="bg-panel h-full min-h-0 flex flex-col">
       <header className="px-4 py-3 border-b border-panel-border">
         <h1 className="text-base font-bold tracking-tight">SEPTA Live</h1>
         <p className="text-xs text-muted mt-0.5">
@@ -229,11 +229,138 @@ function LinePanel({
         onClearBusRoutes={onClearBusRoutes}
       />
 
+      <TripPlanner />
+
       <section>
         <h2 className="text-xs uppercase tracking-widest text-muted mb-2">Find a station</h2>
         <StationPicker onPick={(id) => onSelect({ kind: "station", id })} />
       </section>
     </div>
+  );
+}
+
+function TripPlanner() {
+  const [open, setOpen] = useState(false);
+  const [origin, setOrigin] = useState<string>("");
+  const [dest, setDest] = useState<string>("");
+  const [trips, setTrips] = useState<NextToArrive[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const rrStations = useMemo(
+    () => stations.filter((s) => hasRegionalRail(s)).sort((a, b) => a.name.localeCompare(b.name)),
+    [],
+  );
+
+  const search = async () => {
+    const o = lookupStation(origin);
+    const d = lookupStation(dest);
+    if (!o || !d) {
+      setErr("Pick both stations from the list.");
+      return;
+    }
+    setLoading(true);
+    setErr(null);
+    setTrips(null);
+    try {
+      const r = await fetch(
+        `/api/next-to-arrive?origin=${encodeURIComponent(o.name)}&destination=${encodeURIComponent(d.name)}&results=6`,
+        { cache: "no-store" },
+      );
+      if (!r.ok) throw new Error(`${r.status}`);
+      const j = (await r.json()) as { trips: NextToArrive[] };
+      setTrips(j.trips);
+    } catch {
+      setErr("Couldn't load trips.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <section>
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-xs uppercase tracking-widest text-muted">Trip planner</h2>
+        <button
+          onClick={() => setOpen((o) => !o)}
+          className="text-[10px] font-mono text-muted hover:text-foreground"
+        >
+          {open ? "hide" : "show"}
+        </button>
+      </div>
+      {open && (
+        <div className="space-y-2">
+          <StationDatalist id="origin-list" stations={rrStations} />
+          <StationDatalist id="dest-list" stations={rrStations} />
+          <input
+            value={origin}
+            onChange={(e) => setOrigin(e.target.value)}
+            list="origin-list"
+            placeholder="From: Suburban Station"
+            className="w-full bg-background border border-panel-border rounded px-2 py-1.5 text-sm placeholder:text-muted focus:outline-none focus:border-sky-500"
+          />
+          <input
+            value={dest}
+            onChange={(e) => setDest(e.target.value)}
+            list="dest-list"
+            placeholder="To: Trenton"
+            className="w-full bg-background border border-panel-border rounded px-2 py-1.5 text-sm placeholder:text-muted focus:outline-none focus:border-sky-500"
+          />
+          <button
+            onClick={search}
+            disabled={loading || !origin || !dest}
+            className="w-full text-sm py-1.5 rounded border border-panel-border hover:bg-panel-border/40 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loading ? "Looking…" : "Next trains"}
+          </button>
+          {err && <div className="text-xs text-red-400">{err}</div>}
+          {trips && trips.length === 0 && (
+            <div className="text-xs text-muted">No upcoming trips found.</div>
+          )}
+          {trips && trips.length > 0 && (
+            <ul className="space-y-2 pt-1">
+              {trips.map((t, i) => (
+                <li
+                  key={i}
+                  className="border border-panel-border rounded px-2.5 py-2 bg-background/40 space-y-1.5"
+                >
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: t.lineColor }} />
+                    <span className="font-mono text-xs text-muted">{t.trainNumber}</span>
+                    <span className="flex-1 truncate">{t.line}</span>
+                    <span className="font-mono text-xs">
+                      {t.origDeparture} → {t.origArrival}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className={t.delay === "On time" ? "text-emerald-300" : "text-amber-300"}>
+                      {t.delay}
+                    </span>
+                    <span className="text-muted">{t.isDirect ? "direct" : "transfer"}</span>
+                  </div>
+                  {t.connection && (
+                    <div className="text-xs text-muted border-t border-panel-border pt-1.5 mt-1.5">
+                      transfer at {t.connection.connectingStation} → {t.connection.trainNumber} (
+                      {t.connection.line}) {t.connection.departure} → {t.connection.arrival}
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function StationDatalist({ id, stations: list }: { id: string; stations: typeof stations }) {
+  return (
+    <datalist id={id}>
+      {list.map((s) => (
+        <option key={s.id} value={s.name} />
+      ))}
+    </datalist>
   );
 }
 

@@ -150,6 +150,26 @@ export interface ElevatorOutage {
   alternateUrl: string;
 }
 
+export interface NextToArrive {
+  trainNumber: string;
+  line: string;
+  lineColor: string;
+  origDeparture: string;
+  origArrival: string;
+  delay: string;
+  isDirect: boolean;
+  // Set only when isDirect is false: the connecting train details.
+  connection?: {
+    trainNumber: string;
+    line: string;
+    lineColor: string;
+    departure: string;
+    arrival: string;
+    delay: string;
+    connectingStation: string;
+  };
+}
+
 // --- helpers ----------------------------------------------------------------
 
 async function fetchJson<T>(url: string): Promise<T | null> {
@@ -356,6 +376,61 @@ export async function getTransitVehicles(): Promise<Vehicle[]> {
     }
   }
   return out;
+}
+
+// Each NextToArrive entry from SEPTA: direct trips have orig_* fields; trips
+// requiring a transfer prefix `term_` for the second leg and use isdirect
+// = "false". connecting_station tells you where to transfer.
+interface RawNextToArrive {
+  orig_train: string;
+  orig_line: string;
+  orig_departure_time: string;
+  orig_arrival_time: string;
+  orig_delay: string;
+  isdirect: string;
+  // Connecting trip:
+  connecting_station?: string;
+  term_train?: string;
+  term_line?: string;
+  term_depart_time?: string;
+  term_arrival_time?: string;
+  term_delay?: string;
+}
+
+export async function getNextToArrive(
+  origin: string,
+  destination: string,
+  results = 6,
+): Promise<NextToArrive[]> {
+  const url = `${BASE}/NextToArrive/index.php?req1=${encodeURIComponent(origin)}&req2=${encodeURIComponent(destination)}&req3=${results}`;
+  const raw = await fetchJson<RawNextToArrive[] | { error?: string }>(url);
+  if (!Array.isArray(raw)) return [];
+  return raw.map((r) => {
+    const isDirect = r.isdirect !== "false";
+    const origLine = lookupLine(r.orig_line);
+    const result: NextToArrive = {
+      trainNumber: r.orig_train,
+      line: r.orig_line,
+      lineColor: origLine?.color ?? "#888",
+      origDeparture: r.orig_departure_time,
+      origArrival: r.orig_arrival_time,
+      delay: r.orig_delay,
+      isDirect,
+    };
+    if (!isDirect && r.term_train) {
+      const termLine = lookupLine(r.term_line ?? "");
+      result.connection = {
+        trainNumber: r.term_train,
+        line: r.term_line ?? "",
+        lineColor: termLine?.color ?? "#888",
+        departure: r.term_depart_time ?? "",
+        arrival: r.term_arrival_time ?? "",
+        delay: r.term_delay ?? "",
+        connectingStation: r.connecting_station ?? "",
+      };
+    }
+    return result;
+  });
 }
 
 export async function getElevatorOutages(): Promise<ElevatorOutage[]> {
