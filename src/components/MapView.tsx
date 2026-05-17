@@ -162,13 +162,12 @@ export default function MapView({
     stopLayer.clearLayers();
     for (const [routeId, data] of busData) {
       const route = lookupBusRoute(routeId);
-      const color = route?.color ?? "#888";
+      const color = route?.color ?? "#F59E0B";
       if (data.shape.length >= 2) {
         L.polyline(data.shape, {
           color,
-          weight: 2.5,
-          opacity: 0.6,
-          dashArray: "4 4",
+          weight: 3.5,
+          opacity: 0.9,
           lineCap: "round",
           lineJoin: "round",
         }).addTo(polyLayer);
@@ -176,9 +175,9 @@ export default function MapView({
       for (const stop of data.stops) {
         const m = L.circleMarker([stop.lat, stop.lon], {
           radius: 3,
-          color: color,
+          color,
           fillColor: color,
-          fillOpacity: 0.85,
+          fillOpacity: 0.9,
           weight: 1,
         });
         m.bindTooltip(`${route?.short ?? routeId} · ${stop.name}`, {
