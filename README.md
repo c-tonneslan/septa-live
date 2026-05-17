@@ -1,8 +1,10 @@
 # septa-live
 
-A real-time map of every SEPTA train, trolley, and bus in service right now. Plus a reliability dashboard tracking on-time performance over time, a trip planner, an embeddable iframe mode, and the data pipeline that keeps it all honest.
+A real-time map of every SEPTA train, trolley, and bus in service right now, with multi-modal trip routing across 7,700 stops and a reliability dashboard tracking on-time performance over time. Built because the official SEPTA app is a list of departures and the agency's website is a static schedule PDF, and neither one lets you see the system actually move.
 
 **Live:** [septa-live.vercel.app](https://septa-live.vercel.app) · **Reliability:** [/stats](https://septa-live.vercel.app/stats) · **Embed:** [/embed?lines=PAO,TRE](https://septa-live.vercel.app/embed?lines=PAO,TRE)
+
+![SEPTA Live map screenshot](docs/screenshot.png)
 
 ## What it does
 
