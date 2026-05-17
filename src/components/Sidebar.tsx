@@ -1,25 +1,35 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { lines } from "@/data/lines";
+import { useEffect, useMemo, useState } from "react";
+import { lines, type Mode } from "@/data/lines";
 import { stations, lookupStation } from "@/data/stations";
-import type { Train, StationArrivals } from "@/lib/septa";
+import type { Train, Vehicle, StationArrivals } from "@/lib/septa";
 import type { Selection } from "./App";
 
 interface Props {
   trains: Train[];
+  vehicles: Vehicle[];
   enabledLines: Set<string>;
   onToggleLine: (id: string) => void;
   onSetAllLines: (on: boolean) => void;
+  onSetModeLines: (modes: Mode[], on: boolean) => void;
   selection: Selection;
   onSelect: (s: Selection) => void;
 }
 
+const MODE_GROUPS: { label: string; modes: Mode[] }[] = [
+  { label: "Regional Rail", modes: ["rr"] },
+  { label: "Subway & Light Rail", modes: ["bsl", "mfl", "nhsl"] },
+  { label: "Trolley", modes: ["trolley", "girard", "suburban-trolley"] },
+];
+
 export default function Sidebar({
   trains,
+  vehicles,
   enabledLines,
   onToggleLine,
   onSetAllLines,
+  onSetModeLines,
   selection,
   onSelect,
 }: Props) {
@@ -28,7 +38,7 @@ export default function Sidebar({
       <header className="px-4 py-3 border-b border-panel-border">
         <h1 className="text-base font-bold tracking-tight">SEPTA Live</h1>
         <p className="text-xs text-muted mt-0.5">
-          Real-time Regional Rail, Broad Street, Market-Frankford
+          Regional Rail, Subway, Trolley
         </p>
       </header>
 
@@ -37,14 +47,17 @@ export default function Sidebar({
           <DetailPanel
             selection={selection}
             trains={trains}
+            vehicles={vehicles}
             onClose={() => onSelect(null)}
           />
         ) : (
           <LinePanel
             trains={trains}
+            vehicles={vehicles}
             enabledLines={enabledLines}
             onToggleLine={onToggleLine}
             onSetAllLines={onSetAllLines}
+            onSetModeLines={onSetModeLines}
             onSelect={onSelect}
           />
         )}
@@ -55,32 +68,49 @@ export default function Sidebar({
 
 function LinePanel({
   trains,
+  vehicles,
   enabledLines,
   onToggleLine,
   onSetAllLines,
+  onSetModeLines,
   onSelect,
 }: {
   trains: Train[];
+  vehicles: Vehicle[];
   enabledLines: Set<string>;
   onToggleLine: (id: string) => void;
   onSetAllLines: (on: boolean) => void;
+  onSetModeLines: (modes: Mode[], on: boolean) => void;
   onSelect: (s: Selection) => void;
 }) {
-  const countsByLine = new Map<string, { total: number; late: number; veryLate: number }>();
-  for (const t of trains) {
-    if (!t.lineId) continue;
-    const c = countsByLine.get(t.lineId) ?? { total: 0, late: 0, veryLate: 0 };
-    c.total += 1;
-    if (t.lateMinutes >= 3) c.late += 1;
-    if (t.lateMinutes >= 10) c.veryLate += 1;
-    countsByLine.set(t.lineId, c);
-  }
+  const countsByLine = useMemo(() => {
+    const m = new Map<string, { total: number; late: number }>();
+    const bump = (lineId: string, late: number) => {
+      const c = m.get(lineId) ?? { total: 0, late: 0 };
+      c.total += 1;
+      if (late >= 3) c.late += 1;
+      m.set(lineId, c);
+    };
+    for (const t of trains) if (t.lineId) bump(t.lineId, t.lateMinutes);
+    for (const v of vehicles) if (v.lineId) bump(v.lineId, v.lateMinutes);
+    return m;
+  }, [trains, vehicles]);
 
-  const totalLate = trains.filter((t) => t.lateMinutes >= 3).length;
-  const worst = [...trains]
-    .filter((t) => t.lateMinutes > 0)
-    .sort((a, b) => b.lateMinutes - a.lateMinutes)
-    .slice(0, 5);
+  const totalLate =
+    trains.filter((t) => t.lateMinutes >= 3).length +
+    vehicles.filter((v) => v.lateMinutes >= 3).length;
+
+  const worst = useMemo(() => {
+    type Worst = { id: string; kind: "train" | "vehicle"; lineColor: string; lineShort: string | null; destination: string; lateMinutes: number };
+    const out: Worst[] = [];
+    for (const t of trains)
+      if (t.lateMinutes > 0)
+        out.push({ id: t.id, kind: "train", lineColor: t.lineColor, lineShort: t.lineShort, destination: t.destination, lateMinutes: t.lateMinutes });
+    for (const v of vehicles)
+      if (v.lateMinutes > 0)
+        out.push({ id: v.id, kind: "vehicle", lineColor: v.lineColor, lineShort: v.lineShort, destination: v.destination, lateMinutes: v.lateMinutes });
+    return out.sort((a, b) => b.lateMinutes - a.lateMinutes).slice(0, 6);
+  }, [trains, vehicles]);
 
   return (
     <div className="p-4 space-y-5">
@@ -88,7 +118,7 @@ function LinePanel({
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-xs uppercase tracking-widest text-muted">System</h2>
           <div className="text-xs text-muted font-mono">
-            {trains.length} trains · {totalLate} late
+            {trains.length + vehicles.length} units · {totalLate} late
           </div>
         </div>
         <div className="grid grid-cols-2 gap-2">
@@ -107,56 +137,68 @@ function LinePanel({
         </div>
       </section>
 
-      <section>
-        <h2 className="text-xs uppercase tracking-widest text-muted mb-2">Lines</h2>
-        <ul className="space-y-1">
-          {lines.map((l) => {
-            const counts = countsByLine.get(l.id);
-            const enabled = enabledLines.has(l.id);
-            return (
-              <li key={l.id}>
-                <button
-                  onClick={() => onToggleLine(l.id)}
-                  className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded text-left text-sm transition-colors ${
-                    enabled ? "hover:bg-panel-border/40" : "opacity-40 hover:opacity-70"
-                  }`}
-                >
-                  <span
-                    className="w-3 h-3 rounded-sm shrink-0"
-                    style={{ background: l.color }}
-                    aria-hidden
-                  />
-                  <span className="flex-1 truncate">{l.name}</span>
-                  <span className="text-xs font-mono text-muted">
-                    {counts ? `${counts.total}` : "—"}
-                    {counts && counts.late > 0 && (
-                      <span className="text-red-400 ml-1">·{counts.late}</span>
-                    )}
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      </section>
+      {MODE_GROUPS.map((group) => {
+        const linesInGroup = lines.filter((l) => group.modes.includes(l.mode));
+        if (linesInGroup.length === 0) return null;
+        const anyOn = linesInGroup.some((l) => enabledLines.has(l.id));
+        return (
+          <section key={group.label}>
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-xs uppercase tracking-widest text-muted">{group.label}</h2>
+              <button
+                onClick={() => onSetModeLines(group.modes, !anyOn)}
+                className="text-[10px] font-mono text-muted hover:text-foreground"
+              >
+                {anyOn ? "hide" : "show"}
+              </button>
+            </div>
+            <ul className="space-y-0.5">
+              {linesInGroup.map((l) => {
+                const counts = countsByLine.get(l.id);
+                const enabled = enabledLines.has(l.id);
+                return (
+                  <li key={l.id}>
+                    <button
+                      onClick={() => onToggleLine(l.id)}
+                      className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded text-left text-sm transition-colors ${
+                        enabled ? "hover:bg-panel-border/40" : "opacity-40 hover:opacity-70"
+                      }`}
+                    >
+                      <span
+                        className="w-3 h-3 rounded-sm shrink-0"
+                        style={{ background: l.color }}
+                        aria-hidden
+                      />
+                      <span className="flex-1 truncate">{l.name}</span>
+                      <span className="text-xs font-mono text-muted">
+                        {counts ? counts.total : "—"}
+                        {counts && counts.late > 0 && (
+                          <span className="text-red-400 ml-1">·{counts.late}</span>
+                        )}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        );
+      })}
 
       {worst.length > 0 && (
         <section>
           <h2 className="text-xs uppercase tracking-widest text-muted mb-2">Most delayed</h2>
           <ul className="space-y-1">
-            {worst.map((t) => (
-              <li key={t.id}>
+            {worst.map((w) => (
+              <li key={`${w.kind}-${w.id}`}>
                 <button
-                  onClick={() => onSelect({ kind: "train", id: t.id })}
+                  onClick={() => onSelect({ kind: w.kind, id: w.id })}
                   className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-left text-sm hover:bg-panel-border/40"
                 >
-                  <span
-                    className="w-2.5 h-2.5 rounded-full shrink-0"
-                    style={{ background: t.lineColor }}
-                  />
-                  <span className="font-mono text-xs w-12">{t.id}</span>
-                  <span className="flex-1 truncate text-muted">→ {t.destination}</span>
-                  <span className="text-red-400 font-mono text-xs">+{t.lateMinutes}m</span>
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: w.lineColor }} />
+                  <span className="font-mono text-xs w-14 truncate">{w.lineShort ?? ""} {w.id.split("-").pop()}</span>
+                  <span className="flex-1 truncate text-muted">→ {w.destination}</span>
+                  <span className="text-red-400 font-mono text-xs">+{w.lateMinutes}m</span>
                 </button>
               </li>
             ))}
@@ -184,7 +226,7 @@ function StationPicker({ onPick }: { onPick: (id: string) => void }) {
       <input
         value={q}
         onChange={(e) => setQ(e.target.value)}
-        placeholder="Suburban, Trenton, Paoli…"
+        placeholder="Suburban, Trenton, 30th, Girard…"
         className="w-full bg-background border border-panel-border rounded px-2 py-1.5 text-sm placeholder:text-muted focus:outline-none focus:border-sky-500"
       />
       {filtered.length > 0 && (
@@ -211,10 +253,12 @@ function StationPicker({ onPick }: { onPick: (id: string) => void }) {
 function DetailPanel({
   selection,
   trains,
+  vehicles,
   onClose,
 }: {
   selection: Selection;
   trains: Train[];
+  vehicles: Vehicle[];
   onClose: () => void;
 }) {
   if (!selection) return null;
@@ -226,27 +270,22 @@ function DetailPanel({
       >
         ← back to system
       </button>
-      {selection.kind === "train" ? (
+      {selection.kind === "train" && (
         <TrainDetail train={trains.find((t) => t.id === selection.id) ?? null} />
-      ) : (
-        <StationDetail stationId={selection.id} />
       )}
+      {selection.kind === "vehicle" && (
+        <VehicleDetail vehicle={vehicles.find((v) => v.id === selection.id) ?? null} />
+      )}
+      {selection.kind === "station" && <StationDetail stationId={selection.id} />}
     </div>
   );
 }
 
 function TrainDetail({ train }: { train: Train | null }) {
   if (!train) {
-    return (
-      <p className="text-sm text-muted">
-        This train has dropped from the live feed, probably out of service.
-      </p>
-    );
+    return <p className="text-sm text-muted">This train has dropped from the live feed.</p>;
   }
-  const lateLabel =
-    train.lateMinutes <= 0
-      ? "on time"
-      : `${train.lateMinutes} min late`;
+  const lateLabel = train.lateMinutes <= 0 ? "on time" : `${train.lateMinutes} min late`;
   const lateClass =
     train.lateMinutes >= 10
       ? "text-red-400"
@@ -256,10 +295,7 @@ function TrainDetail({ train }: { train: Train | null }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
-        <span
-          className="w-3 h-3 rounded-sm shrink-0"
-          style={{ background: train.lineColor }}
-        />
+        <span className="w-3 h-3 rounded-sm shrink-0" style={{ background: train.lineColor }} />
         <span className="text-sm font-mono">{train.line}</span>
       </div>
       <div>
@@ -268,14 +304,41 @@ function TrainDetail({ train }: { train: Train | null }) {
       </div>
       <div className={`text-sm font-mono ${lateClass}`}>{lateLabel}</div>
       <dl className="text-sm grid grid-cols-[7rem_1fr] gap-y-1.5">
-        <dt className="text-muted">at</dt>
-        <dd>{train.currentStop || "—"}</dd>
-        <dt className="text-muted">next stop</dt>
-        <dd>{train.nextStop || "—"}</dd>
-        <dt className="text-muted">track</dt>
-        <dd>{train.track || "—"}</dd>
-        <dt className="text-muted">origin</dt>
-        <dd>{train.source || "—"}</dd>
+        <dt className="text-muted">at</dt><dd>{train.currentStop || "—"}</dd>
+        <dt className="text-muted">next stop</dt><dd>{train.nextStop || "—"}</dd>
+        <dt className="text-muted">track</dt><dd>{train.track || "—"}</dd>
+        <dt className="text-muted">origin</dt><dd>{train.source || "—"}</dd>
+      </dl>
+    </div>
+  );
+}
+
+function VehicleDetail({ vehicle }: { vehicle: Vehicle | null }) {
+  if (!vehicle) {
+    return <p className="text-sm text-muted">This vehicle has dropped from the live feed.</p>;
+  }
+  const lateLabel = vehicle.lateMinutes <= 0 ? "on time" : `${vehicle.lateMinutes} min late`;
+  const lateClass =
+    vehicle.lateMinutes >= 10
+      ? "text-red-400"
+      : vehicle.lateMinutes >= 3
+        ? "text-amber-300"
+        : "text-emerald-300";
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <span className="w-3 h-3 rounded-sm shrink-0" style={{ background: vehicle.lineColor }} />
+        <span className="text-sm font-mono">{vehicle.lineShort ?? vehicle.rawRouteId}</span>
+      </div>
+      <div>
+        <div className="text-xl font-bold">{vehicle.label}</div>
+        <div className="text-sm text-muted">→ {vehicle.destination || "—"}</div>
+      </div>
+      <div className={`text-sm font-mono ${lateClass}`}>{lateLabel}</div>
+      <dl className="text-sm grid grid-cols-[7rem_1fr] gap-y-1.5">
+        <dt className="text-muted">next stop</dt><dd>{vehicle.nextStop || "—"}</dd>
+        <dt className="text-muted">trip</dt><dd className="font-mono text-xs">{vehicle.trip || "—"}</dd>
+        <dt className="text-muted">route</dt><dd>{vehicle.rawRouteId}</dd>
       </dl>
     </div>
   );
@@ -361,10 +424,7 @@ function ArrivalsList({
               key={`${a.trainId}-${a.scheduledTime}`}
               className="flex items-center gap-2 px-2 py-1.5 rounded border border-panel-border bg-background/40"
             >
-              <span
-                className="w-2.5 h-2.5 rounded-full shrink-0"
-                style={{ background: a.lineColor }}
-              />
+              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: a.lineColor }} />
               <div className="flex-1 min-w-0">
                 <div className="text-sm truncate">
                   <span className="font-mono text-xs text-muted mr-1.5">{a.trainId}</span>
@@ -375,9 +435,7 @@ function ArrivalsList({
                 </div>
               </div>
               <div
-                className={`text-right text-sm font-mono shrink-0 ${
-                  late ? "text-amber-300" : "text-emerald-300"
-                }`}
+                className={`text-right text-sm font-mono shrink-0 ${late ? "text-amber-300" : "text-emerald-300"}`}
               >
                 {a.status}
               </div>

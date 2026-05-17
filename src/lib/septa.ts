@@ -119,6 +119,30 @@ export interface Alert {
   lastUpdated: string;
 }
 
+export interface Vehicle {
+  id: string;
+  label: string;
+  lat: number;
+  lon: number;
+  rawRouteId: string;
+  lineId: string | null;
+  lineColor: string;
+  lineShort: string | null;
+  destination: string;
+  heading: number;
+  lateMinutes: number;
+  nextStop: string;
+  trip: string;
+}
+
+export interface ElevatorOutage {
+  line: string;
+  station: string;
+  elevator: string;
+  message: string;
+  alternateUrl: string;
+}
+
 // --- helpers ----------------------------------------------------------------
 
 async function fetchJson<T>(url: string): Promise<T | null> {
@@ -244,6 +268,88 @@ export async function getArrivals(
     northbound: north.map(shape),
     southbound: south.map(shape),
   };
+}
+
+// TransitViewAll wraps every vehicle under {"routes":[{"<route_id>":[...]}]}.
+// Each route is keyed by its SEPTA Metro/route id ("T2", "L", "B", "M", "15",
+// "33", etc). We only want vehicles whose route resolves to a known non-RR
+// line (so we don't dump every bus onto the map); RR positions come from the
+// dedicated TrainView endpoint above.
+interface RawTransitVehicle {
+  lat: string;
+  lng: string;
+  label: string;
+  VehicleID: string;
+  route_id?: string;
+  BlockID: string;
+  Direction: string;
+  destination: string;
+  Offset: string;
+  heading: number | string;
+  late: number;
+  original_late?: number;
+  Offset_sec: string;
+  trip: string;
+  next_stop_id?: string;
+  next_stop_name?: string;
+}
+
+export async function getTransitVehicles(): Promise<Vehicle[]> {
+  const raw = await fetchJson<{ routes?: Array<Record<string, RawTransitVehicle[]>> }>(
+    `${BASE}/TransitViewAll/index.php`,
+  );
+  if (!raw?.routes) return [];
+
+  const out: Vehicle[] = [];
+  for (const group of raw.routes) {
+    for (const [routeId, vehicles] of Object.entries(group)) {
+      const line = lookupLine(routeId);
+      // Skip routes we don't render (every bus route). Keep BSL/MFL/NHSL/trolleys.
+      if (!line || line.mode === "rr") continue;
+      for (const v of vehicles) {
+        const lat = parseFloatSafe(v.lat);
+        const lon = parseFloatSafe(v.lng);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+        out.push({
+          id: `${routeId}-${v.VehicleID || v.label}`,
+          label: v.label || v.VehicleID,
+          lat,
+          lon,
+          rawRouteId: routeId,
+          lineId: line.id,
+          lineColor: line.color,
+          lineShort: line.short,
+          destination: v.destination || "",
+          heading: parseFloatSafe(v.heading),
+          lateMinutes: typeof v.late === "number" ? v.late : parseFloatSafe(v.late, 0),
+          nextStop: v.next_stop_name || "",
+          trip: v.trip || "",
+        });
+      }
+    }
+  }
+  return out;
+}
+
+export async function getElevatorOutages(): Promise<ElevatorOutage[]> {
+  const raw = await fetchJson<{
+    meta?: { elevators_out?: number; updated?: string };
+    results?: Array<{
+      line: string;
+      station: string;
+      elevator: string;
+      message: string;
+      alternate_url?: string;
+    }>;
+  }>(`${BASE}/elevator/index.php`);
+  if (!raw?.results) return [];
+  return raw.results.map((r) => ({
+    line: r.line,
+    station: r.station,
+    elevator: r.elevator,
+    message: r.message,
+    alternateUrl: r.alternate_url ?? "",
+  }));
 }
 
 export async function getAlerts(): Promise<Alert[]> {

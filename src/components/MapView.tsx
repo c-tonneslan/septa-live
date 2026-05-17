@@ -2,8 +2,10 @@
 
 import { useEffect, useRef } from "react";
 import L from "leaflet";
-import type { Train } from "@/lib/septa";
+import type { Train, Vehicle } from "@/lib/septa";
 import type { Station } from "@/data/stations";
+import { lookupStationById } from "@/data/stations";
+import { lines } from "@/data/lines";
 import type { Selection } from "./App";
 
 // Center on City Hall with a zoom that covers Trenton, Newark DE, Doylestown,
@@ -29,6 +31,18 @@ function trainIcon(t: Train, selected: boolean): L.DivIcon {
   });
 }
 
+function vehicleIcon(v: Vehicle, selected: boolean): L.DivIcon {
+  const late = v.lateMinutes >= 5;
+  const ring = selected ? "outline: 2px solid #facc15; outline-offset: 2px;" : "";
+  const lateRing = late ? "box-shadow: 0 0 0 2px rgba(239,68,68,0.7);" : "";
+  return L.divIcon({
+    className: "",
+    html: `<div class="vehicle-marker" style="background:${v.lineColor};${ring}${lateRing}">${v.lineShort ?? ""}</div>`,
+    iconSize: [18, 18],
+    iconAnchor: [9, 9],
+  });
+}
+
 function stationIcon(s: Station): L.DivIcon {
   const hub = HUB_IDS.has(s.id) ? " is-hub" : "";
   return L.divIcon({
@@ -41,17 +55,29 @@ function stationIcon(s: Station): L.DivIcon {
 
 interface Props {
   trains: Train[];
+  vehicles: Vehicle[];
   stations: Station[];
+  enabledLines: Set<string>;
   selection: Selection;
   onSelect: (s: Selection) => void;
 }
 
-export default function MapView({ trains, stations, selection, onSelect }: Props) {
+export default function MapView({
+  trains,
+  vehicles,
+  stations,
+  enabledLines,
+  selection,
+  onSelect,
+}: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
-  const trainLayerRef = useRef<L.LayerGroup | null>(null);
+  const polylineLayerRef = useRef<L.LayerGroup | null>(null);
   const stationLayerRef = useRef<L.LayerGroup | null>(null);
+  const trainLayerRef = useRef<L.LayerGroup | null>(null);
+  const vehicleLayerRef = useRef<L.LayerGroup | null>(null);
   const trainMarkers = useRef<Map<string, L.Marker>>(new Map());
+  const vehicleMarkers = useRef<Map<string, L.Marker>>(new Map());
 
   // one-time init
   useEffect(() => {
@@ -72,32 +98,65 @@ export default function MapView({ trains, stations, selection, onSelect }: Props
       },
     ).addTo(map);
     mapRef.current = map;
-    trainLayerRef.current = L.layerGroup().addTo(map);
+    // Z-ordering: polylines (bottom), stations, vehicles, trains (top).
+    polylineLayerRef.current = L.layerGroup().addTo(map);
     stationLayerRef.current = L.layerGroup().addTo(map);
+    vehicleLayerRef.current = L.layerGroup().addTo(map);
+    trainLayerRef.current = L.layerGroup().addTo(map);
 
     return () => {
       map.remove();
       mapRef.current = null;
-      trainLayerRef.current = null;
+      polylineLayerRef.current = null;
       stationLayerRef.current = null;
+      trainLayerRef.current = null;
+      vehicleLayerRef.current = null;
       trainMarkers.current.clear();
+      vehicleMarkers.current.clear();
     };
   }, []);
 
-  // station markers (only redraw when the visible set actually changes)
+  // polylines per enabled line (cheap to redraw, lines don't move)
+  useEffect(() => {
+    const layer = polylineLayerRef.current;
+    if (!layer) return;
+    layer.clearLayers();
+    for (const line of lines) {
+      if (!enabledLines.has(line.id)) continue;
+      if (line.stationOrder.length < 2) continue;
+      const coords: [number, number][] = [];
+      for (const id of line.stationOrder) {
+        const s = lookupStationById(id);
+        if (s) coords.push([s.lat, s.lon]);
+      }
+      if (coords.length < 2) continue;
+      // Subway + RR a hair thicker than trolleys so they read above them.
+      const weight = line.mode === "rr" ? 3 : line.mode === "trolley" ? 2.5 : 4;
+      const opacity = line.mode === "rr" ? 0.7 : 0.85;
+      L.polyline(coords, {
+        color: line.color,
+        weight,
+        opacity,
+        lineCap: "round",
+        lineJoin: "round",
+      }).addTo(layer);
+    }
+  }, [enabledLines]);
+
+  // station markers
   useEffect(() => {
     const layer = stationLayerRef.current;
     if (!layer) return;
     layer.clearLayers();
     for (const s of stations) {
       const m = L.marker([s.lat, s.lon], { icon: stationIcon(s) });
-      m.bindTooltip(s.name, { direction: "top", offset: [0, -6], className: "" });
+      m.bindTooltip(s.name, { direction: "top", offset: [0, -6] });
       m.on("click", () => onSelect({ kind: "station", id: s.id }));
       layer.addLayer(m);
     }
   }, [stations, onSelect]);
 
-  // train markers (reuse marker instances across polls to avoid the redraw flicker)
+  // RR train markers (reuse instances across polls so they slide instead of flicker)
   useEffect(() => {
     const layer = trainLayerRef.current;
     if (!layer) return;
@@ -122,7 +181,6 @@ export default function MapView({ trains, stations, selection, onSelect }: Props
         trainMarkers.current.set(t.id, m);
       }
     }
-    // remove markers for trains that have dropped out of the feed
     for (const [id, marker] of trainMarkers.current) {
       if (!seen.has(id)) {
         layer.removeLayer(marker);
@@ -131,25 +189,59 @@ export default function MapView({ trains, stations, selection, onSelect }: Props
     }
   }, [trains, selection, onSelect]);
 
-  // recenter the map when the user picks a train from the sidebar
+  // transit vehicle markers (BSL/MFL/NHSL/trolleys)
+  useEffect(() => {
+    const layer = vehicleLayerRef.current;
+    if (!layer) return;
+    const seen = new Set<string>();
+    for (const v of vehicles) {
+      if (!v.lineId || !enabledLines.has(v.lineId)) continue;
+      seen.add(v.id);
+      const selected = selection?.kind === "vehicle" && selection.id === v.id;
+      const existing = vehicleMarkers.current.get(v.id);
+      if (existing) {
+        existing.setLatLng([v.lat, v.lon]);
+        existing.setIcon(vehicleIcon(v, selected));
+      } else {
+        const m = L.marker([v.lat, v.lon], { icon: vehicleIcon(v, selected) });
+        m.bindTooltip(
+          `${v.lineShort ?? v.rawRouteId} · ${v.label} → ${v.destination}` +
+            (v.lateMinutes > 0 ? ` · ${v.lateMinutes}m late` : ""),
+          { direction: "top", offset: [0, -8] },
+        );
+        m.on("click", () => onSelect({ kind: "vehicle", id: v.id }));
+        m.addTo(layer);
+        vehicleMarkers.current.set(v.id, m);
+      }
+    }
+    for (const [id, marker] of vehicleMarkers.current) {
+      if (!seen.has(id)) {
+        layer.removeLayer(marker);
+        vehicleMarkers.current.delete(id);
+      }
+    }
+  }, [vehicles, enabledLines, selection, onSelect]);
+
+  // fly to selection
   useEffect(() => {
     if (!mapRef.current || !selection) return;
     if (selection.kind === "train") {
       const t = trains.find((x) => x.id === selection.id);
       if (t && Number.isFinite(t.lat) && Number.isFinite(t.lon)) {
-        mapRef.current.flyTo([t.lat, t.lon], Math.max(mapRef.current.getZoom(), 12), {
-          duration: 0.6,
-        });
+        mapRef.current.flyTo([t.lat, t.lon], Math.max(mapRef.current.getZoom(), 12), { duration: 0.6 });
+      }
+    } else if (selection.kind === "vehicle") {
+      const v = vehicles.find((x) => x.id === selection.id);
+      if (v) {
+        mapRef.current.flyTo([v.lat, v.lon], Math.max(mapRef.current.getZoom(), 13), { duration: 0.6 });
       }
     } else if (selection.kind === "station") {
       const s = stations.find((x) => x.id === selection.id);
       if (s) {
-        mapRef.current.flyTo([s.lat, s.lon], Math.max(mapRef.current.getZoom(), 13), {
-          duration: 0.6,
-        });
+        mapRef.current.flyTo([s.lat, s.lon], Math.max(mapRef.current.getZoom(), 13), { duration: 0.6 });
       }
     }
-  }, [selection, trains, stations]);
+  }, [selection, trains, vehicles, stations]);
 
   return <div ref={containerRef} className="h-full w-full" />;
 }

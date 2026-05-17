@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "./Sidebar";
 import AlertsBar from "./AlertsBar";
-import type { Train, Alert } from "@/lib/septa";
+import type { Train, Vehicle, Alert, ElevatorOutage } from "@/lib/septa";
 import { lines } from "@/data/lines";
 import { stations } from "@/data/stations";
 
@@ -19,21 +19,27 @@ const MapView = dynamic(() => import("./MapView"), {
 
 export type Selection =
   | { kind: "train"; id: string }
+  | { kind: "vehicle"; id: string }
   | { kind: "station"; id: string }
   | null;
 
 const TRAINS_POLL_MS = 15_000;
+const VEHICLES_POLL_MS = 15_000;
 const ALERTS_POLL_MS = 60_000;
+const ELEVATORS_POLL_MS = 300_000;
 
 export default function App() {
   const [trains, setTrains] = useState<Train[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [elevators, setElevators] = useState<ElevatorOutage[]>([]);
   const [trainsAt, setTrainsAt] = useState<string | null>(null);
   const [enabledLines, setEnabledLines] = useState<Set<string>>(
     () => new Set(lines.map((l) => l.id)),
   );
   const [selection, setSelection] = useState<Selection>(null);
   const inflightTrains = useRef<AbortController | null>(null);
+  const inflightVehicles = useRef<AbortController | null>(null);
 
   const pullTrains = useCallback(async () => {
     inflightTrains.current?.abort();
@@ -45,9 +51,19 @@ export default function App() {
       const j = (await r.json()) as { generatedAt: string; trains: Train[] };
       setTrains(j.trains);
       setTrainsAt(j.generatedAt);
-    } catch {
-      // aborted or network error; the next tick will retry
-    }
+    } catch {}
+  }, []);
+
+  const pullVehicles = useCallback(async () => {
+    inflightVehicles.current?.abort();
+    const ctl = new AbortController();
+    inflightVehicles.current = ctl;
+    try {
+      const r = await fetch("/api/vehicles", { signal: ctl.signal, cache: "no-store" });
+      if (!r.ok) return;
+      const j = (await r.json()) as { vehicles: Vehicle[] };
+      setVehicles(j.vehicles);
+    } catch {}
   }, []);
 
   const pullAlerts = useCallback(async () => {
@@ -56,9 +72,16 @@ export default function App() {
       if (!r.ok) return;
       const j = (await r.json()) as { alerts: Alert[] };
       setAlerts(j.alerts);
-    } catch {
-      // ignore; alerts refresh on the next tick
-    }
+    } catch {}
+  }, []);
+
+  const pullElevators = useCallback(async () => {
+    try {
+      const r = await fetch("/api/elevators", { cache: "no-store" });
+      if (!r.ok) return;
+      const j = (await r.json()) as { outages: ElevatorOutage[] };
+      setElevators(j.outages);
+    } catch {}
   }, []);
 
   useEffect(() => {
@@ -68,14 +91,31 @@ export default function App() {
   }, [pullTrains]);
 
   useEffect(() => {
+    pullVehicles();
+    const t = setInterval(pullVehicles, VEHICLES_POLL_MS);
+    return () => clearInterval(t);
+  }, [pullVehicles]);
+
+  useEffect(() => {
     pullAlerts();
     const t = setInterval(pullAlerts, ALERTS_POLL_MS);
     return () => clearInterval(t);
   }, [pullAlerts]);
 
+  useEffect(() => {
+    pullElevators();
+    const t = setInterval(pullElevators, ELEVATORS_POLL_MS);
+    return () => clearInterval(t);
+  }, [pullElevators]);
+
   const visibleTrains = useMemo(
     () => trains.filter((t) => (t.lineId ? enabledLines.has(t.lineId) : true)),
     [trains, enabledLines],
+  );
+
+  const visibleVehicles = useMemo(
+    () => vehicles.filter((v) => v.lineId && enabledLines.has(v.lineId)),
+    [vehicles, enabledLines],
   );
 
   const visibleStations = useMemo(
@@ -96,24 +136,46 @@ export default function App() {
     setEnabledLines(on ? new Set(lines.map((l) => l.id)) : new Set());
   }, []);
 
+  const setModeLines = useCallback((modes: string[], on: boolean) => {
+    setEnabledLines((prev) => {
+      const next = new Set(prev);
+      for (const l of lines) {
+        if (modes.includes(l.mode)) {
+          if (on) next.add(l.id);
+          else next.delete(l.id);
+        }
+      }
+      return next;
+    });
+  }, []);
+
   return (
     <div className="h-full w-full flex flex-col">
-      <AlertsBar alerts={alerts} />
-      <div className="flex-1 grid grid-cols-1 md:grid-cols-[1fr_360px] min-h-0">
+      <AlertsBar alerts={alerts} elevators={elevators} />
+      <div className="flex-1 grid grid-cols-1 md:grid-cols-[1fr_380px] min-h-0">
         <div className="relative min-h-0">
           <MapView
             trains={visibleTrains}
+            vehicles={visibleVehicles}
             stations={visibleStations}
+            enabledLines={enabledLines}
             selection={selection}
             onSelect={setSelection}
           />
-          <Legend trainsAt={trainsAt} count={visibleTrains.length} total={trains.length} />
+          <Legend
+            trainsAt={trainsAt}
+            trainCount={visibleTrains.length}
+            trainTotal={trains.length}
+            vehicleCount={visibleVehicles.length}
+          />
         </div>
         <Sidebar
           trains={trains}
+          vehicles={vehicles}
           enabledLines={enabledLines}
           onToggleLine={toggleLine}
           onSetAllLines={setAllLines}
+          onSetModeLines={setModeLines}
           selection={selection}
           onSelect={setSelection}
         />
@@ -124,12 +186,14 @@ export default function App() {
 
 function Legend({
   trainsAt,
-  count,
-  total,
+  trainCount,
+  trainTotal,
+  vehicleCount,
 }: {
   trainsAt: string | null;
-  count: number;
-  total: number;
+  trainCount: number;
+  trainTotal: number;
+  vehicleCount: number;
 }) {
   const stamp = trainsAt ? new Date(trainsAt).toLocaleTimeString() : "—";
   return (
@@ -139,7 +203,7 @@ function Legend({
         live · updated {stamp}
       </div>
       <div className="text-muted">
-        {count}/{total} trains visible
+        RR: {trainCount}/{trainTotal} · transit: {vehicleCount}
       </div>
       <div className="flex items-center gap-3 pt-1 border-t border-panel-border mt-1">
         <span className="flex items-center gap-1.5">
@@ -149,7 +213,7 @@ function Legend({
           <span className="w-2 h-2 rounded-full ring-1 ring-red-500" /> late
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full ring-2 ring-red-600" /> 10+ min
+          <span className="w-2 h-2 rounded-full ring-2 ring-red-600" /> 10+
         </span>
       </div>
     </div>
