@@ -117,46 +117,54 @@ def load_shapes(text):
     return shapes
 
 
-def longest_shape_per_route(trips_text, shapes):
-    by_route = defaultdict(set)
+def build_trip_index(trips_text, stop_times_text, shapes):
+    """Parse trips + stop_times once and return a per-route, per-direction
+    list of {trip_id, shape, stops} entries. The point: when we later pick a
+    representative trip for a route, the chosen trip's shape and stop list
+    come from the SAME trip - so the rendered polyline goes past every
+    rendered stop. Picking shape and stops independently could land them on
+    different trips (different directions, deadheads, special services) and
+    the stops would float off the line."""
+    trip_meta = {}  # trip_id -> (route_id, direction_id, shape_id)
     for row in read(trips_text):
-        by_route[row["route_id"]].add(row["shape_id"])
-    return {
-        rid: shapes.get(max(sids, key=lambda s: len(shapes.get(s, []))), [])
-        for rid, sids in by_route.items()
-    }
+        trip_meta[row["trip_id"]] = (row["route_id"], row.get("direction_id", "0"), row.get("shape_id", ""))
 
-
-def build_stop_index(trips_text, stop_times_text):
-    """Parse trips + stop_times once and return a (route_id, direction) ->
-    list[list[stop_id]] index. Iterating per-route was O(routes * N) which
-    is fine for 13 RR routes but blows up at 130+ bus routes."""
-    trip_to_route = {}
-    trip_dir = {}
-    for row in read(trips_text):
-        trip_to_route[row["trip_id"]] = row["route_id"]
-        trip_dir[row["trip_id"]] = row.get("direction_id", "0")
-
-    by_trip = defaultdict(list)
+    by_trip_stops = defaultdict(list)
     for row in read(stop_times_text):
         try:
-            by_trip[row["trip_id"]].append((int(row["stop_sequence"]), row["stop_id"]))
+            by_trip_stops[row["trip_id"]].append((int(row["stop_sequence"]), row["stop_id"]))
         except (ValueError, KeyError):
             pass
 
-    index = defaultdict(list)
-    for trip_id, stops in by_trip.items():
-        rid = trip_to_route.get(trip_id)
-        if not rid: continue
-        d = trip_dir.get(trip_id, "0")
-        index[(rid, d)].append([sid for _, sid in sorted(stops)])
+    index = defaultdict(list)  # (route_id, direction) -> list of trip dicts
+    for trip_id, (rid, dir_id, shape_id) in trip_meta.items():
+        stop_seq = by_trip_stops.get(trip_id, [])
+        if not stop_seq: continue
+        index[(rid, dir_id)].append({
+            "trip_id": trip_id,
+            "shape": shapes.get(shape_id, []),
+            "stops": [sid for _, sid in sorted(stop_seq)],
+        })
     return index
 
 
-def stops_for_route(stop_index, route_id, direction="0"):
-    trips = stop_index.get((route_id, direction)) or stop_index.get((route_id, "0" if direction == "1" else "1"))
-    if not trips: return []
-    return max(trips, key=len)
+def representative_trip(trip_index, route_id, direction="0"):
+    """Return the longest-stop-list trip for (route_id, direction), falling
+    back to the other direction. Shape and stop list come from the same trip
+    so they're guaranteed coherent."""
+    trips = trip_index.get((route_id, direction)) or trip_index.get((route_id, "0" if direction == "1" else "1"))
+    if not trips: return None
+    return max(trips, key=lambda t: len(t["stops"]))
+
+
+def stops_for_route(trip_index, route_id, direction="0"):
+    t = representative_trip(trip_index, route_id, direction)
+    return t["stops"] if t else []
+
+
+def shape_for_route(trip_index, route_id, direction="0"):
+    t = representative_trip(trip_index, route_id, direction)
+    return t["shape"] if t else []
 
 
 def is_trolley_street_stop(name):
@@ -195,14 +203,12 @@ def main():
     print("parsing rail...", file=sys.stderr)
     rr_stops = load_stops(feeds["rail"]["stops.txt"])
     rr_shapes = load_shapes(feeds["rail"]["shapes.txt"])
-    rr_route_shape = longest_shape_per_route(feeds["rail"]["trips.txt"], rr_shapes)
-    rr_stop_index = build_stop_index(feeds["rail"]["trips.txt"], feeds["rail"]["stop_times.txt"])
+    rr_trip_index = build_trip_index(feeds["rail"]["trips.txt"], feeds["rail"]["stop_times.txt"], rr_shapes)
 
     print("parsing bus...", file=sys.stderr)
     bus_stops = load_stops(feeds["bus"]["stops.txt"])
     bus_shapes = load_shapes(feeds["bus"]["shapes.txt"])
-    bus_route_shape = longest_shape_per_route(feeds["bus"]["trips.txt"], bus_shapes)
-    bus_stop_index = build_stop_index(feeds["bus"]["trips.txt"], feeds["bus"]["stop_times.txt"])
+    bus_trip_index = build_trip_index(feeds["bus"]["trips.txt"], feeds["bus"]["stop_times.txt"], bus_shapes)
     bus_routes = load_routes(feeds["bus"]["routes.txt"])
 
     stations = {}
@@ -217,9 +223,9 @@ def main():
         s["apiNames"].add(name)
 
     for (lid, _name, _short, _mode, _color, _api) in RR_LINES:
-        order = stops_for_route(rr_stop_index, lid, "0")
+        order = stops_for_route(rr_trip_index, lid, "0")
         if not order:
-            order = stops_for_route(rr_stop_index, lid, "1")
+            order = stops_for_route(rr_trip_index, lid, "1")
         out = []
         for sid in order:
             if sid not in rr_stops: continue
@@ -230,9 +236,9 @@ def main():
         station_order_by_line[lid] = out
 
     for (gid, lid, _metro, _name, _short, mode, _color, _api) in METRO_LINES:
-        order = stops_for_route(bus_stop_index, gid, "0")
+        order = stops_for_route(bus_trip_index, gid, "0")
         if not order:
-            order = stops_for_route(bus_stop_index, gid, "1")
+            order = stops_for_route(bus_trip_index, gid, "1")
         out = []
         for sid in order:
             if sid not in bus_stops: continue
@@ -258,14 +264,14 @@ def main():
     print("export const GENERATED_LINES = [")
     for (lid, name, short, mode, color, api) in RR_LINES:
         order = station_order_by_line.get(lid, [])
-        shape = rr_route_shape.get(lid, [])
+        shape = shape_for_route(rr_trip_index, lid, "0") or shape_for_route(rr_trip_index, lid, "1")
         print(f'  {{ id: {ts_string(lid)}, name: {ts_string(name)}, short: {ts_string(short)}, '
               f'mode: {ts_string(mode)}, color: {ts_string(color)}, '
               f'apiNames: {json.dumps(api)}, stationOrder: {json.dumps(order)}, '
               f'shape: {ts_coord_array(shape)} }},')
     for (gid, lid, metro, name, short, mode, color, api) in METRO_LINES:
         order = station_order_by_line.get(lid, [])
-        shape = bus_route_shape.get(gid, [])
+        shape = shape_for_route(bus_trip_index, gid, "0") or shape_for_route(bus_trip_index, gid, "1")
         print(f'  {{ id: {ts_string(lid)}, metro: {ts_string(metro)}, name: {ts_string(name)}, '
               f'short: {ts_string(short)}, mode: {ts_string(mode)}, color: {ts_string(color)}, '
               f'apiNames: {json.dumps(api)}, stationOrder: {json.dumps(order)}, '
@@ -287,8 +293,12 @@ def main():
     for rid, info in bus_routes.items():
         if rid in metro_gtfs_ids: continue
         if info["type"] != "3": continue  # GTFS route_type 3 = bus
-        order = stops_for_route(bus_stop_index, rid, "0") or stops_for_route(bus_stop_index, rid, "1")
-        shape = bus_route_shape.get(rid, [])
+        # Stops + shape come from the SAME representative trip so the line
+        # actually passes through every rendered stop.
+        trip = representative_trip(bus_trip_index, rid, "0") or representative_trip(bus_trip_index, rid, "1")
+        if not trip: continue
+        order = trip["stops"]
+        shape = trip["shape"]
         if not order and not shape: continue
         # Catalog entry (no shape/stops, just headline metadata)
         bus_catalog.append({
