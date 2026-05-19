@@ -1,13 +1,13 @@
 {
-  "generatedAt": "2026-05-18T22:12:10.308Z",
-  "totalSnapshots": 4,
+  "generatedAt": "2026-05-19T10:48:45.219Z",
+  "totalSnapshots": 5,
   "coverageStart": "2026-05-17T22:10:53.304Z",
   "headline": {
-    "ts": "2026-05-18T22:12:10.307Z",
-    "trainsInService": 52,
-    "onTimePct": 19.2,
-    "avgDelay": 201.77,
-    "majorDelays": 32
+    "ts": "2026-05-19T10:48:45.218Z",
+    "trainsInService": 0,
+    "onTimePct": null,
+    "avgDelay": 0,
+    "majorDelays": 0
   },
   "lines": [
     {
@@ -167,7 +167,7 @@
       "hour": 10,
       "onTimePct": null,
       "avgDelay": 0,
-      "samples": 0
+      "samples": 1
     },
     {
       "hour": 11,
