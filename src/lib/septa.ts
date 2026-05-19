@@ -190,6 +190,14 @@ function parseFloatSafe(n: string | number | null | undefined, fallback = 0): nu
   return Number.isFinite(v) ? v : fallback;
 }
 
+// Like parseFloat but returns NaN for missing/garbage input instead of a
+// fallback. Use this when callers need to detect bad coordinates and drop the
+// row rather than pin it to (0,0).
+function parseCoord(n: string | number | null | undefined): number {
+  if (n === null || n === undefined) return NaN;
+  return typeof n === "number" ? n : parseFloat(n);
+}
+
 // --- public API -------------------------------------------------------------
 
 export async function getTrains(): Promise<Train[]> {
@@ -339,8 +347,8 @@ export async function getTransitVehicles(): Promise<Vehicle[]> {
       // emits internal-only routes like training runs).
       if (!line && !bus) continue;
       for (const v of vehicles) {
-        const lat = parseFloatSafe(v.lat);
-        const lon = parseFloatSafe(v.lng);
+        const lat = parseCoord(v.lat);
+        const lon = parseCoord(v.lng);
         if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
         // SEPTA occasionally reports vehicles with VehicleID="None" (apprentice
         // runs, ghosts, freshly-dispatched units), so VehicleID alone isn't
@@ -362,7 +370,7 @@ export async function getTransitVehicles(): Promise<Vehicle[]> {
           lon,
           rawRouteId: routeId,
           lineId: line?.id ?? null,
-          routeId: bus ? bus.id : line ? null : null,
+          routeId: bus ? bus.id : null,
           isBus: !line && !!bus,
           lineColor: line?.color ?? bus?.color ?? "#888",
           lineShort: line?.short ?? bus?.short ?? routeId,

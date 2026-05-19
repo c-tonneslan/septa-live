@@ -1,0 +1,97 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { getAlerts, getTrains, getTransitVehicles } from "./septa";
+
+function mockFetch(body: unknown, ok = true) {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => ({
+      ok,
+      text: async () => (body === undefined ? "" : JSON.stringify(body)),
+    })),
+  );
+}
+
+describe("septa client", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("shapes TrainView rows and parses numeric strings", async () => {
+    mockFetch([
+      {
+        trainno: "9123",
+        lat: "40.0123",
+        lon: "-75.4567",
+        line: "Paoli/Thorndale",
+        dest: "Thorndale",
+        currentstop: "Bryn Mawr",
+        nextstop: "Rosemont",
+        consist: "X",
+        heading: "184",
+        late: 3,
+        service: "LOC",
+        SOURCE: "SCADA",
+        TRACK: "1",
+        TRACK_CHANGE: "",
+      },
+    ]);
+    const trains = await getTrains();
+    expect(trains).toHaveLength(1);
+    expect(trains[0].lat).toBeCloseTo(40.0123);
+    expect(trains[0].lon).toBeCloseTo(-75.4567);
+    expect(trains[0].lateMinutes).toBe(3);
+    expect(trains[0].lineId).toBe("PAO");
+  });
+
+  it("returns an empty list when upstream isn't an array", async () => {
+    mockFetch({ error: "down" });
+    expect(await getTrains()).toEqual([]);
+    expect(await getAlerts()).toEqual([]);
+  });
+
+  it("returns an empty list when fetch fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("network");
+      }),
+    );
+    expect(await getTrains()).toEqual([]);
+  });
+
+  it("drops vehicles with non-finite coordinates", async () => {
+    mockFetch({
+      routes: [
+        {
+          "21": [
+            { lat: "39.95", lng: "-75.16", VehicleID: "1001", label: "1001", trip: "t1", BlockID: "b1", destination: "Penn's Landing", Direction: "EB", Offset: "0", Offset_sec: "0", heading: 90, late: 0 },
+            { lat: "not-a-number", lng: "-75.16", VehicleID: "1002", label: "1002", trip: "t2", BlockID: "b2", destination: "Penn's Landing", Direction: "EB", Offset: "0", Offset_sec: "0", heading: 90, late: 0 },
+          ],
+        },
+      ],
+    });
+    const vehicles = await getTransitVehicles();
+    expect(vehicles).toHaveLength(1);
+    expect(vehicles[0].lat).toBeCloseTo(39.95);
+  });
+
+  it("classifies alert severity from the boolean string flags", async () => {
+    mockFetch([
+      { route_id: "rt15", route_name: "Route 15", mode: "Trolley", current_message: "Single-tracking",
+        advisory_message: "", detour_message: "", detour_start_date_time: "", detour_end_date_time: "",
+        detour_reason: "", isadvisory: "N", isdetour: "N", isalert: "Y", isdelay: "N", issuspend: "N", last_updated: "x" },
+      { route_id: "rt23", route_name: "Route 23", mode: "Bus", current_message: "Detoured around 5th & Market",
+        advisory_message: "", detour_message: "use 9th", detour_start_date_time: "", detour_end_date_time: "",
+        detour_reason: "construction", isadvisory: "N", isdetour: "Y", isalert: "N", isdelay: "N", issuspend: "N", last_updated: "x" },
+    ]);
+    const alerts = await getAlerts();
+    expect(alerts.map((a) => a.severity)).toEqual(["alert", "detour"]);
+  });
+
+  it("skips alerts that have no messages of any kind", async () => {
+    mockFetch([
+      { route_id: "rt15", route_name: "Route 15", mode: "Trolley", current_message: "", advisory_message: "",
+        detour_message: "", detour_start_date_time: "", detour_end_date_time: "", detour_reason: "",
+        isadvisory: "N", isdetour: "N", isalert: "Y", isdelay: "N", issuspend: "N", last_updated: "x" },
+    ]);
+    expect(await getAlerts()).toEqual([]);
+  });
+});
