@@ -203,26 +203,31 @@ function parseCoord(n: string | number | null | undefined): number {
 export async function getTrains(): Promise<Train[]> {
   const raw = await fetchJson<RawTrain[]>(`${BASE}/TrainView/index.php`);
   if (!Array.isArray(raw)) return [];
-  return raw.map((t) => {
-    const line = lookupLine(t.line);
-    return {
-      id: t.trainno,
-      lat: parseFloatSafe(t.lat),
-      lon: parseFloatSafe(t.lon),
-      line: t.line,
-      lineId: line?.id ?? null,
-      lineColor: line?.color ?? "#888",
-      lineShort: line?.short ?? null,
-      destination: t.dest,
-      currentStop: t.currentstop,
-      nextStop: t.nextstop,
-      heading: parseFloatSafe(t.heading),
-      lateMinutes: typeof t.late === "number" ? t.late : parseFloatSafe(t.late, 0),
-      service: t.service,
-      track: t.TRACK,
-      source: t.SOURCE,
-    };
-  });
+  return raw
+    .map((t) => {
+      const line = lookupLine(t.line);
+      return {
+        id: t.trainno,
+        // TrainView sometimes reports a train with empty coords (sitting in
+        // a yard, just dispatched). Keep them NaN here and drop them below
+        // rather than pinning the marker to (0,0) off the coast of Africa.
+        lat: parseCoord(t.lat),
+        lon: parseCoord(t.lon),
+        line: t.line,
+        lineId: line?.id ?? null,
+        lineColor: line?.color ?? "#888",
+        lineShort: line?.short ?? null,
+        destination: t.dest,
+        currentStop: t.currentstop,
+        nextStop: t.nextstop,
+        heading: parseFloatSafe(t.heading),
+        lateMinutes: typeof t.late === "number" ? t.late : parseFloatSafe(t.late, 0),
+        service: t.service,
+        track: t.TRACK,
+        source: t.SOURCE,
+      };
+    })
+    .filter((t) => Number.isFinite(t.lat) && Number.isFinite(t.lon));
 }
 
 export async function getArrivals(

@@ -41,6 +41,20 @@ describe("septa client", () => {
     expect(trains[0].lineId).toBe("PAO");
   });
 
+  it("drops trains with non-finite coordinates", async () => {
+    mockFetch([
+      { trainno: "9123", lat: "40.01", lon: "-75.45", line: "Paoli/Thorndale", dest: "Thorndale",
+        currentstop: "Bryn Mawr", nextstop: "Rosemont", consist: "X", heading: "184", late: 3,
+        service: "LOC", SOURCE: "SCADA", TRACK: "1", TRACK_CHANGE: "" },
+      { trainno: "9124", lat: "", lon: "", line: "Paoli/Thorndale", dest: "Thorndale",
+        currentstop: "", nextstop: "", consist: "X", heading: "0", late: 0,
+        service: "LOC", SOURCE: "SCADA", TRACK: "", TRACK_CHANGE: "" },
+    ]);
+    const trains = await getTrains();
+    expect(trains).toHaveLength(1);
+    expect(trains[0].id).toBe("9123");
+  });
+
   it("returns an empty list when upstream isn't an array", async () => {
     mockFetch({ error: "down" });
     expect(await getTrains()).toEqual([]);
