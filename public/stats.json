@@ -1,13 +1,13 @@
 {
-  "generatedAt": "2026-05-22T21:48:47.435Z",
-  "totalSnapshots": 16,
+  "generatedAt": "2026-05-23T07:39:57.179Z",
+  "totalSnapshots": 17,
   "coverageStart": "2026-05-17T22:10:53.304Z",
   "headline": {
-    "ts": "2026-05-22T21:48:47.433Z",
-    "trainsInService": 42,
-    "onTimePct": 35.7,
-    "avgDelay": 29.07,
-    "majorDelays": 7
+    "ts": "2026-05-23T07:39:57.177Z",
+    "trainsInService": 1,
+    "onTimePct": 0,
+    "avgDelay": 40,
+    "majorDelays": 1
   },
   "lines": [
     {
@@ -47,10 +47,10 @@
     },
     {
       "line": "MED",
-      "avgTrainsPerSample": 3.3,
-      "onTimePct": 47.2,
-      "avgDelay": 36.14,
-      "majorDelays": 8
+      "avgTrainsPerSample": 3.1,
+      "onTimePct": 45.9,
+      "avgDelay": 36.24,
+      "majorDelays": 9
     },
     {
       "line": "FOX",
@@ -147,9 +147,9 @@
     },
     {
       "hour": 7,
-      "onTimePct": null,
-      "avgDelay": 0,
-      "samples": 0
+      "onTimePct": 0,
+      "avgDelay": 20,
+      "samples": 1
     },
     {
       "hour": 8,
@@ -237,9 +237,9 @@
     },
     {
       "hour": 22,
-      "onTimePct": 59.375,
-      "avgDelay": 17.64,
-      "samples": 1
+      "onTimePct": null,
+      "avgDelay": 0,
+      "samples": 0
     },
     {
       "hour": 23,
