@@ -104,16 +104,40 @@ function buildStats(snaps) {
     majorDelays: a.late10,
   })).sort((a, b) => (b.onTimePct ?? 0) - (a.onTimePct ?? 0));
 
-  // Hourly bucket over last 24h
-  const hourly = Array.from({ length: 24 }, (_, h) => ({ hour: h, onTimePct: null, avgDelay: 0, samples: 0 }));
+  // Hourly bucket over last 24h, in America/New_York. SEPTA's a Philly
+  // agency, so showing UTC on the chart was always wrong (and shifted by
+  // an hour twice a year on top of that). We accumulate sums and divide
+  // once, since the previous (a + b) / 2 form wasn't a real running
+  // average -- the last sample ended up weighted at ~50%.
+  const hourFormatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    hour: "numeric",
+    hour12: false,
+  });
+  function etHour(iso) {
+    const h = parseInt(hourFormatter.format(new Date(iso)), 10);
+    // "24" can come back for midnight depending on the runtime; normalize.
+    return h === 24 ? 0 : h;
+  }
+  const hourly = Array.from({ length: 24 }, (_, h) => ({
+    hour: h, onTimePct: null, avgDelay: 0, samples: 0,
+    _pctSum: 0, _pctSamples: 0, _delaySum: 0,
+  }));
   for (const s of last24) {
-    const h = new Date(s.ts).getUTCHours();
-    const bucket = hourly[h];
+    const bucket = hourly[etHour(s.ts)];
     bucket.samples += 1;
-    bucket.onTimePct = bucket.onTimePct === null
-      ? (s.total > 0 ? ((s.total - s.late3) / s.total) * 100 : null)
-      : (bucket.onTimePct + (s.total > 0 ? ((s.total - s.late3) / s.total) * 100 : 0)) / 2;
-    bucket.avgDelay = (bucket.avgDelay + s.avgDelay) / 2;
+    bucket._delaySum += s.avgDelay;
+    if (s.total > 0) {
+      bucket._pctSum += ((s.total - s.late3) / s.total) * 100;
+      bucket._pctSamples += 1;
+    }
+  }
+  for (const b of hourly) {
+    b.onTimePct = b._pctSamples > 0 ? +(b._pctSum / b._pctSamples).toFixed(1) : null;
+    b.avgDelay = b.samples > 0 ? +(b._delaySum / b.samples).toFixed(2) : 0;
+    delete b._pctSum;
+    delete b._pctSamples;
+    delete b._delaySum;
   }
 
   // Headline

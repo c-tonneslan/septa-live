@@ -191,7 +191,7 @@ function HourlyChart({ hourly }: { hourly: HourBucket[] }) {
   return (
     <section>
       <h2 className="text-sm uppercase tracking-widest text-muted mb-3">
-        Last 24h, average delay by hour (UTC)
+        Last 24h, average delay by hour (Eastern Time)
       </h2>
       <div className="border border-panel-border rounded-md p-4 bg-panel/40">
         <div className="flex items-end gap-1 h-32">
