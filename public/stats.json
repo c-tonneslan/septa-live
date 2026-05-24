@@ -1,12 +1,12 @@
 {
-  "generatedAt": "2026-05-24T08:05:27.638Z",
-  "totalSnapshots": 22,
+  "generatedAt": "2026-05-24T11:58:20.687Z",
+  "totalSnapshots": 23,
   "coverageStart": "2026-05-17T22:10:53.304Z",
   "headline": {
-    "ts": "2026-05-24T08:05:27.636Z",
-    "trainsInService": 1,
-    "onTimePct": 100,
-    "avgDelay": 1,
+    "ts": "2026-05-24T11:58:20.663Z",
+    "trainsInService": 0,
+    "onTimePct": null,
+    "avgDelay": 0,
     "majorDelays": 0
   },
   "lines": [
@@ -129,9 +129,9 @@
     },
     {
       "hour": 4,
-      "onTimePct": null,
-      "avgDelay": 0,
-      "samples": 0
+      "onTimePct": 100,
+      "avgDelay": 1,
+      "samples": 1
     },
     {
       "hour": 5,
@@ -149,13 +149,13 @@
       "hour": 7,
       "onTimePct": null,
       "avgDelay": 0,
-      "samples": 0
+      "samples": 1
     },
     {
       "hour": 8,
-      "onTimePct": 100,
-      "avgDelay": 0.5,
-      "samples": 1
+      "onTimePct": null,
+      "avgDelay": 0,
+      "samples": 0
     },
     {
       "hour": 9,
@@ -171,8 +171,8 @@
     },
     {
       "hour": 11,
-      "onTimePct": 63.1578947368421,
-      "avgDelay": 1.42,
+      "onTimePct": 73.7,
+      "avgDelay": 2.05,
       "samples": 1
     },
     {
@@ -195,8 +195,8 @@
     },
     {
       "hour": 15,
-      "onTimePct": 73.68421052631578,
-      "avgDelay": 1.025,
+      "onTimePct": 60,
+      "avgDelay": 102.75,
       "samples": 1
     },
     {
@@ -213,15 +213,15 @@
     },
     {
       "hour": 18,
-      "onTimePct": null,
-      "avgDelay": 0,
-      "samples": 0
+      "onTimePct": 68.2,
+      "avgDelay": 94.55,
+      "samples": 1
     },
     {
       "hour": 19,
-      "onTimePct": 60,
-      "avgDelay": 51.375,
-      "samples": 1
+      "onTimePct": null,
+      "avgDelay": 0,
+      "samples": 0
     },
     {
       "hour": 20,
@@ -237,9 +237,9 @@
     },
     {
       "hour": 22,
-      "onTimePct": 68.18181818181817,
-      "avgDelay": 47.275,
-      "samples": 1
+      "onTimePct": null,
+      "avgDelay": 0,
+      "samples": 0
     },
     {
       "hour": 23,
