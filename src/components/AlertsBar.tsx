@@ -30,6 +30,13 @@ export default function AlertsBar({
     return () => clearInterval(t);
   }, [interesting.length]);
 
+  // Alerts get refetched every 60s. If the list shrunk past our cursor,
+  // interesting[idx] is undefined and we crash on .severity below. Pull
+  // back into range whenever the count changes.
+  useEffect(() => {
+    if (idx >= interesting.length) setIdx(0);
+  }, [idx, interesting.length]);
+
   if (interesting.length === 0 && elevators.length === 0) {
     return (
       <div className="bg-panel/60 border-b border-panel-border px-4 py-2 text-xs font-mono text-muted flex items-center gap-3">
@@ -46,7 +53,9 @@ export default function AlertsBar({
     );
   }
 
-  const current = interesting[idx];
+  // Clamp on read so we don't crash the render between an alerts refetch
+  // (which can shrink interesting) and the effect above firing.
+  const current = interesting[idx] ?? interesting[0];
   const cls = severityColor[current.severity];
 
   return (
