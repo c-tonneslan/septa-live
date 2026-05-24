@@ -199,6 +199,21 @@ export default function App() {
     if (selection) setSheetState((s) => (s === "peek" ? "half" : s));
   }, [selection]);
 
+  // Esc deselects whatever's currently selected. Skip while the user's
+  // typing in a station/stop picker so it can dismiss the suggestion
+  // dropdown natively.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (selection) setSelection(null);
+      else if (trip) setTrip(null);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selection, trip]);
+
   const sheetHeightClass =
     sheetState === "peek"
       ? "h-16"
