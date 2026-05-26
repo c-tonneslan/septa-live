@@ -36,6 +36,10 @@ export default function App() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [elevators, setElevators] = useState<ElevatorOutage[]>([]);
   const [trainsAt, setTrainsAt] = useState<string | null>(null);
+  // Client-side timestamp of the last successful trains fetch. Drives the
+  // "stale" / "API down" indicator in the legend when SEPTA's feed
+  // stops responding mid-session.
+  const [trainsFetchedAt, setTrainsFetchedAt] = useState<number | null>(null);
   const [enabledLines, setEnabledLines] = useState<Set<string>>(
     () => new Set(lines.map((l) => l.id)),
   );
@@ -56,6 +60,7 @@ export default function App() {
       const j = (await r.json()) as { generatedAt: string; trains: Train[] };
       setTrains(j.trains);
       setTrainsAt(j.generatedAt);
+      setTrainsFetchedAt(Date.now());
     } catch {}
   }, []);
 
@@ -238,6 +243,7 @@ export default function App() {
           />
           <Legend
             trainsAt={trainsAt}
+            trainsFetchedAt={trainsFetchedAt}
             trainCount={visibleTrains.length}
             trainTotal={trains.length}
             vehicleCount={visibleVehicles.length}
@@ -292,25 +298,61 @@ export default function App() {
   );
 }
 
+// Trains poll every 15s. Anything older than 60s of client wall-clock is
+// "stale" (one or two failed pulls), past 3 minutes the feed is treated
+// as down. The legend re-evaluates every 5s so the badge updates even
+// when no new data arrives.
+const STALE_AFTER_MS = 60_000;
+const DOWN_AFTER_MS = 180_000;
+const LEGEND_TICK_MS = 5_000;
+
 function Legend({
   trainsAt,
+  trainsFetchedAt,
   trainCount,
   trainTotal,
   vehicleCount,
   busRouteCount,
 }: {
   trainsAt: string | null;
+  trainsFetchedAt: number | null;
   trainCount: number;
   trainTotal: number;
   vehicleCount: number;
   busRouteCount: number;
 }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), LEGEND_TICK_MS);
+    return () => clearInterval(t);
+  }, []);
+
   const stamp = trainsAt ? new Date(trainsAt).toLocaleTimeString() : "—";
+  const age = trainsFetchedAt ? Date.now() - trainsFetchedAt : null;
+  const status: "live" | "stale" | "down" =
+    age === null || age < STALE_AFTER_MS
+      ? "live"
+      : age < DOWN_AFTER_MS
+        ? "stale"
+        : "down";
+  const dotClass =
+    status === "live"
+      ? "bg-emerald-400 animate-pulse"
+      : status === "stale"
+        ? "bg-amber-400"
+        : "bg-red-500";
+  const statusText =
+    status === "live"
+      ? `live · updated ${stamp}`
+      : status === "stale"
+        ? `stale · last update ${stamp}`
+        : `SEPTA feed unreachable · last update ${stamp}`;
+
   return (
     <div className="absolute bottom-3 left-3 z-[400] bg-panel/90 border border-panel-border rounded-md px-3 py-2 text-xs font-mono space-y-1 backdrop-blur">
       <div className="text-muted">
-        <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-2 align-middle" />
-        live · updated {stamp}
+        <span className={`inline-block w-1.5 h-1.5 rounded-full mr-2 align-middle ${dotClass}`} />
+        {statusText}
       </div>
       <div className="text-muted">
         RR: {trainCount}/{trainTotal} · transit: {vehicleCount}
