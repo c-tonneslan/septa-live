@@ -1,20 +1,20 @@
 {
-  "generatedAt": "2026-05-29T23:58:44.701Z",
-  "totalSnapshots": 39,
+  "generatedAt": "2026-05-30T09:03:46.141Z",
+  "totalSnapshots": 40,
   "coverageStart": "2026-05-17T22:10:53.304Z",
   "headline": {
-    "ts": "2026-05-29T23:58:44.683Z",
-    "trainsInService": 42,
-    "onTimePct": 19,
-    "avgDelay": 296.12,
-    "majorDelays": 27
+    "ts": "2026-05-30T09:03:46.123Z",
+    "trainsInService": 4,
+    "onTimePct": 75,
+    "avgDelay": 2.25,
+    "majorDelays": 0
   },
   "lines": [
     {
       "line": "WAR",
       "avgTrainsPerSample": 2.6,
-      "onTimePct": 71.7,
-      "avgDelay": 77.74,
+      "onTimePct": 70.9,
+      "avgDelay": 75.04,
       "majorDelays": 7
     },
     {
@@ -26,9 +26,9 @@
     },
     {
       "line": "AIR",
-      "avgTrainsPerSample": 2.1,
-      "onTimePct": 61.5,
-      "avgDelay": 29.56,
+      "avgTrainsPerSample": 2,
+      "onTimePct": 62.5,
+      "avgDelay": 28.82,
       "majorDelays": 5
     },
     {
@@ -54,10 +54,10 @@
     },
     {
       "line": "MED",
-      "avgTrainsPerSample": 2.5,
-      "onTimePct": 54.9,
-      "avgDelay": 122.24,
-      "majorDelays": 14
+      "avgTrainsPerSample": 2.6,
+      "onTimePct": 56,
+      "avgDelay": 123.88,
+      "majorDelays": 13
     },
     {
       "line": "FOX",
@@ -65,6 +65,13 @@
       "onTimePct": 52.6,
       "avgDelay": 2.84,
       "majorDelays": 1
+    },
+    {
+      "line": "WIL",
+      "avgTrainsPerSample": 2.9,
+      "onTimePct": 50,
+      "avgDelay": 84.45,
+      "majorDelays": 10
     },
     {
       "line": "WTR",
@@ -79,13 +86,6 @@
       "onTimePct": 48.8,
       "avgDelay": 78.32,
       "majorDelays": 8
-    },
-    {
-      "line": "WIL",
-      "avgTrainsPerSample": 3.1,
-      "onTimePct": 48.6,
-      "avgDelay": 86.68,
-      "majorDelays": 10
     },
     {
       "line": "PAO",
@@ -135,9 +135,9 @@
     },
     {
       "hour": 5,
-      "onTimePct": null,
-      "avgDelay": 0,
-      "samples": 0
+      "onTimePct": 75,
+      "avgDelay": 2.25,
+      "samples": 1
     },
     {
       "hour": 6,
