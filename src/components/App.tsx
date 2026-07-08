@@ -191,6 +191,30 @@ export default function App() {
 
   const clearBusRoutes = useCallback(() => setEnabledBusRoutes(new Set()), []);
 
+  // The sidebar's "worst delays" list is built from the FULL data, but the map
+  // only renders enabled lines/routes. Selecting a unit whose line is filtered
+  // off would leave the map with no marker to fly to or highlight — so when a
+  // selection lands on a hidden line/route, turn it back on.
+  const handleSelect = useCallback((s: Selection) => {
+    if (s?.kind === "train") {
+      const t = trains.find((x) => x.id === s.id);
+      if (t?.lineId && !enabledLines.has(t.lineId)) {
+        const id = t.lineId;
+        setEnabledLines((prev) => new Set(prev).add(id));
+      }
+    } else if (s?.kind === "vehicle") {
+      const v = vehicles.find((x) => x.id === s.id);
+      if (v?.isBus && v.routeId && !enabledBusRoutes.has(v.routeId)) {
+        const id = v.routeId;
+        setEnabledBusRoutes((prev) => new Set(prev).add(id));
+      } else if (v && !v.isBus && v.lineId && !enabledLines.has(v.lineId)) {
+        const id = v.lineId;
+        setEnabledLines((prev) => new Set(prev).add(id));
+      }
+    }
+    setSelection(s);
+  }, [trains, vehicles, enabledLines, enabledBusRoutes]);
+
   const [sheetState, setSheetState] = useState<"peek" | "half" | "full">("peek");
   const cycleSheet = useCallback(
     () =>
@@ -239,7 +263,7 @@ export default function App() {
             busData={enabledBusData}
             trip={trip}
             selection={selection}
-            onSelect={setSelection}
+            onSelect={handleSelect}
           />
           <Legend
             trainsAt={trainsAt}
@@ -289,7 +313,7 @@ export default function App() {
               onClearBusRoutes={clearBusRoutes}
               onShowTrip={setTrip}
               selection={selection}
-              onSelect={setSelection}
+              onSelect={handleSelect}
             />
           </div>
         </div>

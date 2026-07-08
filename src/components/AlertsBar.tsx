@@ -54,8 +54,10 @@ export default function AlertsBar({
   }
 
   // Clamp on read so we don't crash the render between an alerts refetch
-  // (which can shrink interesting) and the effect above firing.
-  const current = interesting[idx] ?? interesting[0];
+  // (which can shrink interesting) and the effect above firing. Use the same
+  // clamped index for the position label so it can't read e.g. "4/3".
+  const safeIdx = idx < interesting.length ? idx : 0;
+  const current = interesting[safeIdx];
   const cls = severityColor[current.severity];
 
   return (
@@ -69,7 +71,7 @@ export default function AlertsBar({
           {current.message || current.advisory || current.detour}
         </span>
         <span className="text-xs font-mono opacity-60 whitespace-nowrap">
-          {idx + 1}/{interesting.length}
+          {safeIdx + 1}/{interesting.length}
         </span>
         <button
           onClick={() => setOpen((o) => !o)}

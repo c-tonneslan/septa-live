@@ -108,6 +108,11 @@ export default function MapView({
   // from its last known position toward the new one so trains/buses glide
   // instead of jumping. A single RAF loop processes every active tween.
   const tweens = useRef<Map<string, { marker: L.Marker; fromLat: number; fromLon: number; toLat: number; toLon: number; start: number; duration: number }>>(new Map());
+  // Last target each marker is already tweening toward, so re-running a marker
+  // effect for a non-position reason (e.g. selection changed) doesn't restart an
+  // in-flight tween from its current interpolated position (which made markers
+  // stall and creep).
+  const tweenTargets = useRef<Map<string, [number, number]>>(new Map());
   const rafRef = useRef<number | null>(null);
 
   const startTickLoop = () => {
@@ -132,6 +137,10 @@ export default function MapView({
   };
 
   const tweenMarkerTo = (id: string, marker: L.Marker, to: [number, number], duration = 14_500) => {
+    // Already heading to this exact target — don't restart the tween.
+    const prevTarget = tweenTargets.current.get(id);
+    if (prevTarget && prevTarget[0] === to[0] && prevTarget[1] === to[1]) return;
+    tweenTargets.current.set(id, to);
     const from = marker.getLatLng();
     if (from.lat === to[0] && from.lng === to[1]) return;
     tweens.current.set(id, {
@@ -347,6 +356,7 @@ export default function MapView({
         layer.removeLayer(marker);
         trainMarkers.current.delete(id);
         tweens.current.delete(`t-${id}`);
+        tweenTargets.current.delete(`t-${id}`);
       }
     }
   }, [trains, selection, onSelect]);
@@ -382,29 +392,44 @@ export default function MapView({
         layer.removeLayer(marker);
         vehicleMarkers.current.delete(id);
         tweens.current.delete(`v-${id}`);
+        tweenTargets.current.delete(`v-${id}`);
       }
     }
   }, [vehicles, selection, onSelect]);
 
-  // fly to selection
+  // Fly to a selection ONCE, when the user picks something — not on every 15s
+  // poll or line toggle. The effect depends on trains/vehicles/stations (to read
+  // fresh coordinates), but those change identity each poll, so guard on the
+  // selection identity and only fly when it actually changes.
+  const lastFlown = useRef<string | null>(null);
   useEffect(() => {
-    if (!mapRef.current || !selection) return;
+    const map = mapRef.current;
+    if (!map || !selection) { lastFlown.current = null; return; }
+    const key = `${selection.kind}:${selection.id}`;
+    if (key === lastFlown.current) return; // a data refresh, not a new selection
+    let flew = false;
     if (selection.kind === "train") {
       const t = trains.find((x) => x.id === selection.id);
       if (t && Number.isFinite(t.lat) && Number.isFinite(t.lon)) {
-        mapRef.current.flyTo([t.lat, t.lon], Math.max(mapRef.current.getZoom(), 12), { duration: 0.6 });
+        map.flyTo([t.lat, t.lon], Math.max(map.getZoom(), 12), { duration: 0.6 });
+        flew = true;
       }
     } else if (selection.kind === "vehicle") {
       const v = vehicles.find((x) => x.id === selection.id);
       if (v) {
-        mapRef.current.flyTo([v.lat, v.lon], Math.max(mapRef.current.getZoom(), 13), { duration: 0.6 });
+        map.flyTo([v.lat, v.lon], Math.max(map.getZoom(), 13), { duration: 0.6 });
+        flew = true;
       }
     } else if (selection.kind === "station") {
       const s = stations.find((x) => x.id === selection.id);
       if (s) {
-        mapRef.current.flyTo([s.lat, s.lon], Math.max(mapRef.current.getZoom(), 13), { duration: 0.6 });
+        map.flyTo([s.lat, s.lon], Math.max(map.getZoom(), 13), { duration: 0.6 });
+        flew = true;
       }
     }
+    // Only record it as flown once we actually had coordinates, so a selection
+    // made before its data arrives still flies on the next poll.
+    if (flew) lastFlown.current = key;
   }, [selection, trains, vehicles, stations]);
 
   return (

@@ -77,4 +77,16 @@ describe("router", () => {
     const trip = route(g, "A", "D")!;
     expect(trip.totalMinutes).toBeGreaterThan(0);
   });
+
+  it("does not add the search-only board penalty to displayed ride time", () => {
+    // A→D is 3 colinear segments on L1 (~3.3km at 12mph ≈ 10.4 real minutes).
+    // The 1-min-per-segment BOARD_PENALTY is a Dijkstra bias, not travel time,
+    // so it must NOT appear in the leg's displayed minutes (which would inflate
+    // it to ~13.4). Band excludes the penalized value.
+    const g = compile(net());
+    const leg = route(g, "A", "D")!.legs[0];
+    expect(leg.kind).toBe("ride");
+    expect(leg.minutes).toBeGreaterThan(10);
+    expect(leg.minutes).toBeLessThan(11);
+  });
 });

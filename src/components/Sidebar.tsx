@@ -644,7 +644,9 @@ function DetailPanel({
       {selection.kind === "vehicle" && (
         <VehicleDetail vehicle={vehicles.find((v) => v.id === selection.id) ?? null} />
       )}
-      {selection.kind === "station" && <StationDetail stationId={selection.id} />}
+      {/* key remounts StationDetail when the station changes, so its cached
+          `data` can't briefly show the previous station's arrivals. */}
+      {selection.kind === "station" && <StationDetail key={selection.id} stationId={selection.id} />}
     </div>
   );
 }

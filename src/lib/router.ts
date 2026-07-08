@@ -69,7 +69,8 @@ export interface Trip {
 
 interface Edge {
   to: string;
-  minutes: number;
+  minutes: number;        // Dijkstra weight — includes the board penalty (search bias)
+  travelMinutes: number;  // real travel time, used for the displayed leg duration
   routeId: string | null; // null = walking edge
 }
 
@@ -88,10 +89,11 @@ export function compile(network: Network): CompiledGraph {
   for (const [rid, r] of Object.entries(network.routes)) routes.set(rid, r);
 
   const adjacency = new Map<string, Edge[]>();
-  const edge = (from: string, to: string, minutes: number, routeId: string | null) => {
+  const edge = (from: string, to: string, minutes: number, travelMinutes: number, routeId: string | null) => {
     const arr = adjacency.get(from);
-    if (arr) arr.push({ to, minutes, routeId });
-    else adjacency.set(from, [{ to, minutes, routeId }]);
+    const e: Edge = { to, minutes, travelMinutes, routeId };
+    if (arr) arr.push(e);
+    else adjacency.set(from, [e]);
   };
 
   const BOARD_PENALTY = 1.0;
@@ -103,16 +105,17 @@ export function compile(network: Network): CompiledGraph {
       const b = stops.get(route.stops[i + 1]);
       if (!a || !b) continue;
       const meters = haversineM(a.lat, a.lon, b.lat, b.lon);
-      // miles / mph * 60 = minutes
-      const minutes = (meters / 1609.34) / speed * 60 + BOARD_PENALTY;
-      edge(a.id, b.id, minutes, rid);
-      edge(b.id, a.id, minutes, rid);
+      // miles / mph * 60 = minutes of real travel; the board penalty is a search
+      // bias only (prefer fewer transfers), so keep it out of travelMinutes.
+      const travel = (meters / 1609.34) / speed * 60;
+      edge(a.id, b.id, travel + BOARD_PENALTY, travel, rid);
+      edge(b.id, a.id, travel + BOARD_PENALTY, travel, rid);
     }
   }
 
   for (const [a, b, minutes] of network.transfers) {
-    edge(a, b, minutes, null);
-    edge(b, a, minutes, null);
+    edge(a, b, minutes, minutes, null);
+    edge(b, a, minutes, minutes, null);
   }
 
   return { stops, routes, adjacency };
@@ -247,9 +250,10 @@ export function route(g: CompiledGraph, fromId: string, toId: string): Trip | nu
       const route = g.routes.get(step.routeId);
       if (!route) continue;
       const last = legs[legs.length - 1];
+      // Real travel minutes for display (the board penalty is search-only).
       const speed = (g.adjacency.get(step.fromStopId) ?? []).find(
         (e) => e.to === step.toStopId && e.routeId === step.routeId,
-      )?.minutes ?? meters / 1609.34 / 12 * 60;
+      )?.travelMinutes ?? meters / 1609.34 / 12 * 60;
       if (last && last.kind === "ride" && last.routeId === step.routeId) {
         last.toStop = toStop;
         last.stops.push(toStop);

@@ -172,12 +172,19 @@ export interface NextToArrive {
 
 // --- helpers ----------------------------------------------------------------
 
-async function fetchJson<T>(url: string): Promise<T | null> {
+async function fetchJson<T>(url: string, revalidate = 15): Promise<T | null> {
   try {
-    const res = await fetch(url, { next: { revalidate: 15 } });
+    // Bound the request: SEPTA's www3 feeds sometimes accept the socket and
+    // never respond, which would otherwise hang the awaiting fetch (and the
+    // whole route) until the platform's function timeout. An abort throws, which
+    // the catch turns into a graceful null the callers already handle.
+    const res = await fetch(url, { signal: AbortSignal.timeout(7000), next: { revalidate } });
     if (!res.ok) return null;
     const text = await res.text();
-    if (!text || text === "[]") return JSON.parse(text || "[]") as T;
+    // An empty 200 body means "no data / upstream hiccup", not an empty array —
+    // return null so object endpoints (getArrivals) surface their error note.
+    // Array callers still map null to [] via their own Array.isArray guard.
+    if (!text.trim()) return null;
     return JSON.parse(text) as T;
   } catch {
     return null;
@@ -188,6 +195,25 @@ function parseFloatSafe(n: string | number | null | undefined, fallback = 0): nu
   if (n === null || n === undefined) return fallback;
   const v = typeof n === "number" ? n : parseFloat(n);
   return Number.isFinite(v) ? v : fallback;
+}
+
+// SEPTA's service-area bounding box. Coordinates outside it — most commonly an
+// exact (0,0) from a vehicle that logged onto a block before acquiring a GPS
+// fix — are finite numbers, so Number.isFinite alone lets them through and pins
+// a phantom marker off the coast of Africa. Reject anything out of bounds.
+// Clamp a caller-supplied result count. Routes build this from a raw query param
+// (`Number(searchParams.get("results") ?? "8")`), which yields 0 for "?results="
+// and NaN for garbage — both would flow straight into the upstream URL. Floor to
+// a sane range instead.
+function clampResults(n: number, def: number, max = 25): number {
+  return Number.isFinite(n) && n >= 1 ? Math.min(Math.trunc(n), max) : def;
+}
+
+function inPhillyBounds(lat: number, lon: number): boolean {
+  return (
+    Number.isFinite(lat) && Number.isFinite(lon) &&
+    lat >= 39.5 && lat <= 40.5 && lon >= -76.0 && lon <= -74.5
+  );
 }
 
 // Like parseFloat but returns NaN for missing/garbage input instead of a
@@ -227,13 +253,14 @@ export async function getTrains(): Promise<Train[]> {
         source: t.SOURCE,
       };
     })
-    .filter((t) => Number.isFinite(t.lat) && Number.isFinite(t.lon));
+    .filter((t) => inPhillyBounds(t.lat, t.lon));
 }
 
 export async function getArrivals(
   stationName: string,
   results = 8,
 ): Promise<StationArrivals> {
+  results = clampResults(results, 8);
   const station = lookupStation(stationName);
   // The upstream Arrivals endpoint matches case-sensitively on the canonical
   // station name. Use the curated canonical when available, fall back to the
@@ -254,7 +281,7 @@ export async function getArrivals(
   }
 
   const url = `${BASE}/Arrivals/index.php?station=${encodeURIComponent(canonical)}&results=${results}`;
-  const raw = await fetchJson<Record<string, unknown>>(url);
+  const raw = await fetchJson<Record<string, unknown>>(url, 20);
 
   const empty = (note?: string): StationArrivals => ({
     station: canonical,
@@ -354,7 +381,7 @@ export async function getTransitVehicles(): Promise<Vehicle[]> {
       for (const v of vehicles) {
         const lat = parseCoord(v.lat);
         const lon = parseCoord(v.lng);
-        if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+        if (!inPhillyBounds(lat, lon)) continue;
         // SEPTA occasionally reports vehicles with VehicleID="None" (apprentice
         // runs, ghosts, freshly-dispatched units), so VehicleID alone isn't
         // unique. trip + block disambiguates because two vehicles can't share
@@ -415,8 +442,9 @@ export async function getNextToArrive(
   destination: string,
   results = 6,
 ): Promise<NextToArrive[]> {
+  results = clampResults(results, 6);
   const url = `${BASE}/NextToArrive/index.php?req1=${encodeURIComponent(origin)}&req2=${encodeURIComponent(destination)}&req3=${results}`;
-  const raw = await fetchJson<RawNextToArrive[] | { error?: string }>(url);
+  const raw = await fetchJson<RawNextToArrive[] | { error?: string }>(url, 30);
   if (!Array.isArray(raw)) return [];
   return raw.map((r) => {
     const isDirect = r.isdirect !== "false";
@@ -456,7 +484,7 @@ export async function getElevatorOutages(): Promise<ElevatorOutage[]> {
       message: string;
       alternate_url?: string;
     }>;
-  }>(`${BASE}/elevator/index.php`);
+  }>(`${BASE}/elevator/index.php`, 300);
   if (!raw?.results) return [];
   return raw.results.map((r) => ({
     line: r.line,
@@ -468,7 +496,7 @@ export async function getElevatorOutages(): Promise<ElevatorOutage[]> {
 }
 
 export async function getAlerts(): Promise<Alert[]> {
-  const raw = await fetchJson<RawAlert[]>(`${BASE}/Alerts/index.php`);
+  const raw = await fetchJson<RawAlert[]>(`${BASE}/Alerts/index.php`, 60);
   if (!Array.isArray(raw)) return [];
   const out: Alert[] = [];
   for (const a of raw) {
