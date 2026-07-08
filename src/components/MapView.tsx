@@ -13,6 +13,9 @@ import type { Selection } from "./App";
 // Thorndale - the regional rail's outer bounds.
 const CENTER: [number, number] = [40.005, -75.16];
 const INITIAL_ZOOM = 10;
+// Below this zoom the individual bus/trolley dots are hidden (declutter the
+// region-wide frame); they reveal as you zoom into a neighborhood.
+const VEHICLE_MIN_ZOOM = 12;
 
 // RR Center City hub stations and 69th St / Frankford / Norristown — the
 // terminal-class stations that get a slightly larger marker so they pop on
@@ -75,6 +78,20 @@ function vehicleIcon(v: Vehicle, selected: boolean): L.DivIcon {
     iconSize: [18, 18],
     iconAnchor: [9, 9],
   });
+}
+
+// Fly to a point, but on phones shift the center south so the target rises above
+// the bottom sheet (which covers ~half the screen) instead of landing under it.
+function flyToPoint(map: L.Map, latlon: [number, number], minZoom: number) {
+  const zoom = Math.max(map.getZoom(), minZoom);
+  const isMobile = typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches;
+  if (isMobile) {
+    const inset = map.getSize().y * 0.5; // sheet auto-pops to ~half on select
+    const shifted = map.project(latlon, zoom).add([0, inset / 2]);
+    map.flyTo(map.unproject(shifted, zoom), zoom, { duration: 0.6 });
+  } else {
+    map.flyTo(latlon, zoom, { duration: 0.6 });
+  }
 }
 
 function stationIcon(s: Station): L.DivIcon {
@@ -189,6 +206,11 @@ export default function MapView({
       zoom: INITIAL_ZOOM,
       zoomControl: true,
       preferCanvas: true,
+      // Keep the user in the SEPTA region — no zooming out to the whole globe or
+      // panning into the open ocean with no way back.
+      minZoom: 8,
+      maxBounds: L.latLngBounds([39.2, -76.5], [40.7, -74.1]),
+      maxBoundsViscosity: 0.6,
     });
     L.tileLayer(
       "https://cartodb-basemaps-{s}.global.ssl.fastly.net/dark_all/{z}/{x}/{y}{r}.png",
@@ -209,6 +231,19 @@ export default function MapView({
     stationLayerRef.current = L.layerGroup().addTo(map);
     vehicleLayerRef.current = L.layerGroup().addTo(map);
     trainLayerRef.current = L.layerGroup().addTo(map);
+
+    // Zoom-tier the clutter: at region-wide zoom the hundreds of bus/trolley
+    // dots are noise, so hide them until the user zooms into a neighborhood.
+    // Trains, stations, and line shapes (the RR skeleton) stay visible.
+    const applyZoomTiers = () => {
+      const vl = vehicleLayerRef.current;
+      if (!vl) return;
+      const show = map.getZoom() >= VEHICLE_MIN_ZOOM;
+      if (show && !map.hasLayer(vl)) map.addLayer(vl);
+      else if (!show && map.hasLayer(vl)) map.removeLayer(vl);
+    };
+    applyZoomTiers();
+    map.on("zoomend", applyZoomTiers);
 
     return () => {
       map.remove();
@@ -437,19 +472,19 @@ export default function MapView({
     if (selection.kind === "train") {
       const t = trains.find((x) => x.id === selection.id);
       if (t && Number.isFinite(t.lat) && Number.isFinite(t.lon)) {
-        map.flyTo([t.lat, t.lon], Math.max(map.getZoom(), 12), { duration: 0.6 });
+        flyToPoint(map, [t.lat, t.lon], 12);
         flew = true;
       }
     } else if (selection.kind === "vehicle") {
       const v = vehicles.find((x) => x.id === selection.id);
       if (v) {
-        map.flyTo([v.lat, v.lon], Math.max(map.getZoom(), 13), { duration: 0.6 });
+        flyToPoint(map, [v.lat, v.lon], 13);
         flew = true;
       }
     } else if (selection.kind === "station") {
       const s = stations.find((x) => x.id === selection.id);
       if (s) {
-        map.flyTo([s.lat, s.lon], Math.max(map.getZoom(), 13), { duration: 0.6 });
+        flyToPoint(map, [s.lat, s.lon], 13);
         flew = true;
       }
     }
