@@ -224,6 +224,17 @@ function parseCoord(n: string | number | null | undefined): number {
   return typeof n === "number" ? n : parseFloat(n);
 }
 
+// SEPTA's TransitView `late` field uses 998/999 as "no estimate available"
+// sentinels — not a literal ~999-minute delay. Treat those (and any absurd
+// magnitude) as unknown lateness (0) so a whole fleet of ghost vehicles doesn't
+// show a red "very late" ring and swamp the "most delayed" list. Real values
+// (including negatives, which mean running early) pass through.
+function sanitizeLate(v: string | number | null | undefined): number {
+  const n = typeof v === "number" ? v : parseFloatSafe(v, 0);
+  if (!Number.isFinite(n) || Math.abs(n) >= 900) return 0;
+  return n;
+}
+
 // --- public API -------------------------------------------------------------
 
 export async function getTrains(): Promise<Train[]> {
@@ -247,7 +258,7 @@ export async function getTrains(): Promise<Train[]> {
         currentStop: t.currentstop,
         nextStop: t.nextstop,
         heading: parseFloatSafe(t.heading),
-        lateMinutes: typeof t.late === "number" ? t.late : parseFloatSafe(t.late, 0),
+        lateMinutes: sanitizeLate(t.late),
         service: t.service,
         track: t.TRACK,
         source: t.SOURCE,
@@ -408,7 +419,7 @@ export async function getTransitVehicles(): Promise<Vehicle[]> {
           lineShort: line?.short ?? bus?.short ?? routeId,
           destination: v.destination || "",
           heading: parseFloatSafe(v.heading),
-          lateMinutes: typeof v.late === "number" ? v.late : parseFloatSafe(v.late, 0),
+          lateMinutes: sanitizeLate(v.late),
           nextStop: v.next_stop_name || "",
           trip: v.trip || "",
         });

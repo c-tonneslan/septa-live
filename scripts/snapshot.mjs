@@ -41,7 +41,10 @@ function summarize(trains) {
   let delaySum = 0;
   for (const t of trains) {
     const lid = lineNameToId[t.line] ?? "UNK";
-    const late = Number(t.late) || 0;
+    // SEPTA uses 998/999 as "no estimate available" sentinels — clamp to 0 so a
+    // single annulled/ghost train can't swing a line's avg delay to ~999 min.
+    const raw = Number(t.late);
+    const late = Number.isFinite(raw) && Math.abs(raw) < 900 ? raw : 0;
     const b = (byLine[lid] ??= { total: 0, late3: 0, late10: 0, delaySum: 0 });
     b.total += 1;
     if (late >= 3) b.late3 += 1;

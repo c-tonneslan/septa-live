@@ -87,6 +87,27 @@ describe("septa client", () => {
     expect(vehicles[0].lat).toBeCloseTo(39.95);
   });
 
+  it("treats SEPTA's 998/999 'no estimate' sentinels as unknown (0), keeps real values", async () => {
+    mockFetch({
+      routes: [
+        {
+          "21": [
+            { lat: "39.95", lng: "-75.16", VehicleID: "A", label: "A", trip: "t1", BlockID: "b1", destination: "x", Direction: "EB", Offset: "0", Offset_sec: "0", heading: 90, late: 999 },
+            { lat: "39.96", lng: "-75.16", VehicleID: "B", label: "B", trip: "t2", BlockID: "b2", destination: "x", Direction: "EB", Offset: "0", Offset_sec: "0", heading: 90, late: 998 },
+            { lat: "39.97", lng: "-75.16", VehicleID: "C", label: "C", trip: "t3", BlockID: "b3", destination: "x", Direction: "EB", Offset: "0", Offset_sec: "0", heading: 90, late: 7 },
+            { lat: "39.98", lng: "-75.16", VehicleID: "D", label: "D", trip: "t4", BlockID: "b4", destination: "x", Direction: "EB", Offset: "0", Offset_sec: "0", heading: 90, late: -3 },
+          ],
+        },
+      ],
+    });
+    const vehicles = await getTransitVehicles();
+    const byLabel = Object.fromEntries(vehicles.map((v) => [v.label, v.lateMinutes]));
+    expect(byLabel.A).toBe(0); // 999 sentinel -> unknown
+    expect(byLabel.B).toBe(0); // 998 sentinel -> unknown
+    expect(byLabel.C).toBe(7); // real delay passes through
+    expect(byLabel.D).toBe(-3); // running early passes through
+  });
+
   it("classifies alert severity from the boolean string flags", async () => {
     mockFetch([
       { route_id: "rt15", route_name: "Route 15", mode: "Trolley", current_message: "Single-tracking",
