@@ -9,6 +9,7 @@ import { lines } from "@/data/lines";
 import { stations } from "@/data/stations";
 import { loadBusData, type BusRouteData } from "@/data/buses";
 import type { Trip } from "@/lib/router";
+import { loadPrefs, savePrefs, clearPrefs } from "@/lib/prefs";
 
 const MapView = dynamic(() => import("./MapView"), {
   ssr: false,
@@ -44,11 +45,39 @@ export default function App() {
     () => new Set(lines.map((l) => l.id)),
   );
   const [enabledBusRoutes, setEnabledBusRoutes] = useState<Set<string>>(() => new Set());
+  // Lines/routes turned on transiently by selecting a hidden unit — they feed
+  // visibility but are NOT persisted, so a one-off tap on the "worst delays"
+  // list doesn't silently rewrite the rider's saved filter.
+  const [pinnedLines, setPinnedLines] = useState<Set<string>>(() => new Set());
+  const [pinnedBusRoutes, setPinnedBusRoutes] = useState<Set<string>>(() => new Set());
   const [busData, setBusData] = useState<Record<string, BusRouteData> | null>(null);
   const [selection, setSelection] = useState<Selection>(null);
   const [trip, setTrip] = useState<Trip | null>(null);
   const inflightTrains = useRef<AbortController | null>(null);
   const inflightVehicles = useRef<AbortController | null>(null);
+
+  // Persisted line/route preferences. Hydrate AFTER mount (localStorage is
+  // undefined during SSR; a lazy useState initializer would hydration-mismatch
+  // the server-rendered Sidebar/Legend). Start from the all-on default, then
+  // overwrite with saved prefs if any.
+  const [hydrated, setHydrated] = useState(false);
+  const justHydrated = useRef(true);
+  useEffect(() => {
+    const p = loadPrefs();
+    if (p) {
+      setEnabledLines(new Set(p.lines));
+      setEnabledBusRoutes(new Set(p.bus));
+    }
+    setHydrated(true);
+  }, []);
+  // Write only after a genuine post-hydration change — skipping the hydration
+  // tick avoids both clobbering saved prefs and freezing the all-on default into
+  // storage for first-time visitors who never touched a filter.
+  useEffect(() => {
+    if (!hydrated) return;
+    if (justHydrated.current) { justHydrated.current = false; return; }
+    savePrefs({ lines: Array.from(enabledLines), bus: Array.from(enabledBusRoutes) });
+  }, [hydrated, enabledLines, enabledBusRoutes]);
 
   const pullTrains = useCallback(async () => {
     inflightTrains.current?.abort();
@@ -125,23 +154,33 @@ export default function App() {
     loadBusData().then(setBusData).catch(() => {});
   }, [enabledBusRoutes, busData]);
 
+  // Visibility = the persisted filter plus any transiently-pinned lines/routes.
+  const lineOn = useCallback(
+    (id: string) => enabledLines.has(id) || pinnedLines.has(id),
+    [enabledLines, pinnedLines],
+  );
+  const busOn = useCallback(
+    (id: string) => enabledBusRoutes.has(id) || pinnedBusRoutes.has(id),
+    [enabledBusRoutes, pinnedBusRoutes],
+  );
+
   const visibleTrains = useMemo(
-    () => trains.filter((t) => (t.lineId ? enabledLines.has(t.lineId) : true)),
-    [trains, enabledLines],
+    () => trains.filter((t) => (t.lineId ? lineOn(t.lineId) : true)),
+    [trains, lineOn],
   );
 
   const visibleVehicles = useMemo(
     () =>
       vehicles.filter((v) => {
-        if (v.isBus) return v.routeId ? enabledBusRoutes.has(v.routeId) : false;
-        return v.lineId ? enabledLines.has(v.lineId) : false;
+        if (v.isBus) return v.routeId ? busOn(v.routeId) : false;
+        return v.lineId ? lineOn(v.lineId) : false;
       }),
-    [vehicles, enabledLines, enabledBusRoutes],
+    [vehicles, lineOn, busOn],
   );
 
   const visibleStations = useMemo(
-    () => stations.filter((s) => s.lineIds.some((id) => enabledLines.has(id))),
-    [enabledLines],
+    () => stations.filter((s) => s.lineIds.some((id) => lineOn(id))),
+    [lineOn],
   );
 
   const enabledBusData = useMemo(() => {
@@ -191,25 +230,35 @@ export default function App() {
 
   const clearBusRoutes = useCallback(() => setEnabledBusRoutes(new Set()), []);
 
+  const resetPrefs = useCallback(() => {
+    // Skip the write the reset itself triggers, so the key is removed rather
+    // than immediately repopulated with defaults.
+    justHydrated.current = true;
+    setEnabledLines(new Set(lines.map((l) => l.id)));
+    setEnabledBusRoutes(new Set());
+    clearPrefs();
+  }, []);
+
   // The sidebar's "worst delays" list is built from the FULL data, but the map
   // only renders enabled lines/routes. Selecting a unit whose line is filtered
-  // off would leave the map with no marker to fly to or highlight — so when a
-  // selection lands on a hidden line/route, turn it back on.
+  // off would leave the map with no marker to fly to or highlight — so PIN its
+  // line so it shows. Pins feed visibility but are not persisted, so a one-off
+  // tap doesn't permanently rewrite the rider's saved filter.
   const handleSelect = useCallback((s: Selection) => {
     if (s?.kind === "train") {
       const t = trains.find((x) => x.id === s.id);
       if (t?.lineId && !enabledLines.has(t.lineId)) {
         const id = t.lineId;
-        setEnabledLines((prev) => new Set(prev).add(id));
+        setPinnedLines((prev) => new Set(prev).add(id));
       }
     } else if (s?.kind === "vehicle") {
       const v = vehicles.find((x) => x.id === s.id);
       if (v?.isBus && v.routeId && !enabledBusRoutes.has(v.routeId)) {
         const id = v.routeId;
-        setEnabledBusRoutes((prev) => new Set(prev).add(id));
+        setPinnedBusRoutes((prev) => new Set(prev).add(id));
       } else if (v && !v.isBus && v.lineId && !enabledLines.has(v.lineId)) {
         const id = v.lineId;
-        setEnabledLines((prev) => new Set(prev).add(id));
+        setPinnedLines((prev) => new Set(prev).add(id));
       }
     }
     setSelection(s);
@@ -312,6 +361,7 @@ export default function App() {
               onToggleBusRoute={toggleBusRoute}
               onClearBusRoutes={clearBusRoutes}
               onShowTrip={setTrip}
+              onResetPrefs={resetPrefs}
               selection={selection}
               onSelect={handleSelect}
             />

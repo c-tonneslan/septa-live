@@ -20,6 +20,7 @@ interface Props {
   onToggleBusRoute: (id: string) => void;
   onClearBusRoutes: () => void;
   onShowTrip: (trip: Trip | null) => void;
+  onResetPrefs: () => void;
   selection: Selection;
   onSelect: (s: Selection) => void;
 }
@@ -41,6 +42,7 @@ export default function Sidebar({
   onToggleBusRoute,
   onClearBusRoutes,
   onShowTrip,
+  onResetPrefs,
   selection,
   onSelect,
 }: Props) {
@@ -77,6 +79,7 @@ export default function Sidebar({
             onToggleBusRoute={onToggleBusRoute}
             onClearBusRoutes={onClearBusRoutes}
             onShowTrip={onShowTrip}
+            onResetPrefs={onResetPrefs}
             onSelect={onSelect}
           />
         </div>
@@ -96,6 +99,7 @@ function LinePanel({
   onToggleBusRoute,
   onClearBusRoutes,
   onShowTrip,
+  onResetPrefs,
   onSelect,
 }: {
   trains: Train[];
@@ -108,6 +112,7 @@ function LinePanel({
   onToggleBusRoute: (id: string) => void;
   onClearBusRoutes: () => void;
   onShowTrip: (trip: Trip | null) => void;
+  onResetPrefs: () => void;
   onSelect: (s: Selection) => void;
 }) {
   const countsByLine = useMemo(() => {
@@ -144,8 +149,17 @@ function LinePanel({
       <section>
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-xs uppercase tracking-widest text-muted">System</h2>
-          <div className="text-xs text-muted font-mono">
-            {trains.length + vehicles.length} units · {totalLate} late
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onResetPrefs}
+              title="Reset saved line filters to default"
+              className="text-[10px] font-mono text-muted hover:text-foreground"
+            >
+              reset
+            </button>
+            <span className="text-xs text-muted font-mono">
+              {trains.length + vehicles.length} units · {totalLate} late
+            </span>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-2">
