@@ -382,16 +382,22 @@ function Legend({
         RR: {trainCount}/{trainTotal} · transit: {vehicleCount}
         {busRouteCount > 0 && ` · ${busRouteCount} bus routes`}
       </div>
-      <div className="flex items-center gap-3 pt-1 border-t border-panel-border mt-1">
-        <span className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-emerald-400" /> on time
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full ring-1 ring-red-500" /> late
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full ring-2 ring-red-600" /> 10+
-        </span>
+      <div className="pt-1 border-t border-panel-border mt-1 space-y-1">
+        {/* Delay is a RING around the (line-colored) marker, not its fill —
+            no ring = on time, amber = 3–9 min, red = 10+ min. */}
+        <div className="flex items-center gap-3">
+          <span className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-muted" /> on time
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-muted ring-2 ring-late" /> 3–9m
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-muted ring-2 ring-late-severe" /> 10m+
+          </span>
+        </div>
+        <div className="text-muted/80">pill = train · dot = bus/trolley · ring = station</div>
+        <div className="text-muted/70">tap any marker for live detail</div>
       </div>
     </div>
   );

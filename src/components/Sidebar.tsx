@@ -6,6 +6,7 @@ import { stations, lookupStation } from "@/data/stations";
 import { busRoutes, lookupBusRoute } from "@/data/buses";
 import { loadNetwork, route as runRoute, type Trip, type NetworkStop } from "@/lib/router";
 import type { Train, Vehicle, StationArrivals } from "@/lib/septa";
+import { lateStatus } from "@/lib/delay";
 import type { Selection } from "./App";
 
 interface Props {
@@ -197,7 +198,7 @@ function LinePanel({
                       <span className="text-xs font-mono text-muted">
                         {counts ? counts.total : "—"}
                         {counts && counts.late > 0 && (
-                          <span className="text-red-400 ml-1">·{counts.late}</span>
+                          <span className="text-late-severe ml-1">·{counts.late}</span>
                         )}
                       </span>
                     </button>
@@ -222,7 +223,7 @@ function LinePanel({
                   <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: w.lineColor }} />
                   <span className="font-mono text-xs w-14 truncate">{w.lineShort ?? ""} {w.id.split("-").pop()}</span>
                   <span className="flex-1 truncate text-muted">→ {w.destination}</span>
-                  <span className="text-red-400 font-mono text-xs">+{w.lateMinutes}m</span>
+                  <span className={`font-mono text-xs ${lateStatus(w.lateMinutes).textClass}`}>+{w.lateMinutes}m</span>
                 </button>
               </li>
             ))}
@@ -655,13 +656,7 @@ function TrainDetail({ train }: { train: Train | null }) {
   if (!train) {
     return <p className="text-sm text-muted">This train has dropped from the live feed.</p>;
   }
-  const lateLabel = train.lateMinutes <= 0 ? "on time" : `${train.lateMinutes} min late`;
-  const lateClass =
-    train.lateMinutes >= 10
-      ? "text-red-400"
-      : train.lateMinutes >= 3
-        ? "text-amber-300"
-        : "text-emerald-300";
+  const late = lateStatus(train.lateMinutes);
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
@@ -672,7 +667,7 @@ function TrainDetail({ train }: { train: Train | null }) {
         <div className="text-xl font-bold">Train {train.id}</div>
         <div className="text-sm text-muted">{train.service} → {train.destination}</div>
       </div>
-      <div className={`text-sm font-mono ${lateClass}`}>{lateLabel}</div>
+      <div className={`text-sm font-mono ${late.textClass}`}>{late.label}</div>
       <dl className="text-sm grid grid-cols-[7rem_1fr] gap-y-1.5">
         <dt className="text-muted">at</dt><dd>{train.currentStop || "—"}</dd>
         <dt className="text-muted">next stop</dt><dd>{train.nextStop || "—"}</dd>
@@ -687,13 +682,7 @@ function VehicleDetail({ vehicle }: { vehicle: Vehicle | null }) {
   if (!vehicle) {
     return <p className="text-sm text-muted">This vehicle has dropped from the live feed.</p>;
   }
-  const lateLabel = vehicle.lateMinutes <= 0 ? "on time" : `${vehicle.lateMinutes} min late`;
-  const lateClass =
-    vehicle.lateMinutes >= 10
-      ? "text-red-400"
-      : vehicle.lateMinutes >= 3
-        ? "text-amber-300"
-        : "text-emerald-300";
+  const late = lateStatus(vehicle.lateMinutes);
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
@@ -704,7 +693,7 @@ function VehicleDetail({ vehicle }: { vehicle: Vehicle | null }) {
         <div className="text-xl font-bold">{vehicle.label}</div>
         <div className="text-sm text-muted">→ {vehicle.destination || "—"}</div>
       </div>
-      <div className={`text-sm font-mono ${lateClass}`}>{lateLabel}</div>
+      <div className={`text-sm font-mono ${late.textClass}`}>{late.label}</div>
       <dl className="text-sm grid grid-cols-[7rem_1fr] gap-y-1.5">
         <dt className="text-muted">next stop</dt><dd>{vehicle.nextStop || "—"}</dd>
         <dt className="text-muted">trip</dt><dd className="font-mono text-xs">{vehicle.trip || "—"}</dd>
@@ -788,7 +777,11 @@ function ArrivalsList({
       <h3 className="text-xs uppercase tracking-widest text-muted mb-2">{title}</h3>
       <ul className="space-y-1.5">
         {arrivals.map((a) => {
-          const late = /min/i.test(a.status) && !/on time/i.test(a.status);
+          // Parse the minutes out of the status string ("5 min late") so arrivals
+          // use the same emerald/amber/red scale as everything else.
+          const m = /(\d+)\s*min/i.exec(a.status);
+          const mins = m && /late/i.test(a.status) ? Number(m[1]) : 0;
+          const statusClass = lateStatus(mins).textClass;
           return (
             <li
               key={`${a.trainId}-${a.scheduledTime}`}
@@ -804,9 +797,7 @@ function ArrivalsList({
                   {a.line} · track {a.track || "?"} · platform {a.platform || "?"}
                 </div>
               </div>
-              <div
-                className={`text-right text-sm font-mono shrink-0 ${late ? "text-amber-300" : "text-emerald-300"}`}
-              >
+              <div className={`text-right text-sm font-mono shrink-0 ${statusClass}`}>
                 {a.status}
               </div>
             </li>

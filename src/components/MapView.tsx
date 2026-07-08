@@ -23,6 +23,27 @@ const HUB_IDS = new Set([
   "m-1281", "m-152", "m-20965",                   // City Hall BSL, NRG, Fern Rock
 ]);
 
+// Pick black or white text for legibility on an arbitrary line color (WCAG-ish
+// relative luminance). Hardcoded black text vanished on the #000000 line and on
+// dark navy/maroon; hardcoded white was illegible on the yellow/white trolleys.
+function contrastText(hex: string): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return "#ffffff";
+  const n = parseInt(m[1], 16);
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((c) => {
+    const s = c / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  });
+  const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return lum > 0.4 ? "#0b0f14" : "#ffffff";
+}
+
+// A very dark line color would leave the marker border invisible on the dark
+// basemap; brighten the outline in that case so the pill still separates.
+function markerBorder(hex: string): string {
+  return contrastText(hex) === "#ffffff" ? "rgba(255,255,255,0.35)" : "rgba(11,15,20,0.9)";
+}
+
 function trainIcon(t: Train, selected: boolean): L.DivIcon {
   const cls =
     t.lateMinutes >= 10
@@ -33,19 +54,24 @@ function trainIcon(t: Train, selected: boolean): L.DivIcon {
   const ring = selected ? "outline: 2px solid #facc15; outline-offset: 2px;" : "";
   return L.divIcon({
     className: "",
-    html: `<div class="${cls}" style="background:${t.lineColor};${ring}">${t.id}</div>`,
+    html: `<div class="${cls}" style="background:${t.lineColor};color:${contrastText(t.lineColor)};border-color:${markerBorder(t.lineColor)};${ring}">${t.id}</div>`,
     iconSize: [32, 22],
     iconAnchor: [16, 11],
   });
 }
 
 function vehicleIcon(v: Vehicle, selected: boolean): L.DivIcon {
-  const late = v.lateMinutes >= 5;
+  // Same delay vocabulary as trains: amber ring 3–9, red ring 10+.
+  const lateRing =
+    v.lateMinutes >= 10
+      ? "box-shadow: 0 0 0 2px var(--late-severe);"
+      : v.lateMinutes >= 3
+        ? "box-shadow: 0 0 0 2px var(--late);"
+        : "";
   const ring = selected ? "outline: 2px solid #facc15; outline-offset: 2px;" : "";
-  const lateRing = late ? "box-shadow: 0 0 0 2px rgba(239,68,68,0.7);" : "";
   return L.divIcon({
     className: "",
-    html: `<div class="vehicle-marker" style="background:${v.lineColor};${ring}${lateRing}">${v.lineShort ?? ""}</div>`,
+    html: `<div class="vehicle-marker" style="background:${v.lineColor};color:${contrastText(v.lineColor)};border-color:${markerBorder(v.lineColor)};${ring}${lateRing}">${v.lineShort ?? ""}</div>`,
     iconSize: [18, 18],
     iconAnchor: [9, 9],
   });
