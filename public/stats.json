@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-07-08T11:31:40.450Z",
-  "totalSnapshots": 46,
+  "generatedAt": "2026-07-08T13:16:57.424Z",
+  "totalSnapshots": 47,
   "coverageStart": "2026-05-17T22:10:53.304Z",
   "headline": {
-    "ts": "2026-07-08T11:31:40.411Z",
+    "ts": "2026-07-08T13:16:57.401Z",
     "trainsInService": 0,
     "onTimePct": null,
     "avgDelay": 0,
@@ -69,7 +69,7 @@
       "hour": 9,
       "onTimePct": null,
       "avgDelay": 0,
-      "samples": 0
+      "samples": 1
     },
     {
       "hour": 10,
