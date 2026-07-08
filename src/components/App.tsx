@@ -71,18 +71,26 @@ export default function App() {
   // server-rendered Sidebar/Legend don't hydration-mismatch. Stash the shared
   // selection to resolve once live data arrives.
   const [hydrated, setHydrated] = useState(false);
+  const [shareResolved, setShareResolved] = useState(false);
   const justHydrated = useRef(true);
   const restoredSel = useRef<ParsedView["selection"]>(null);
-  const restoredStale = useRef(false);
+  const restoredSelFresh = useRef(false); // train/vehicle sel trustable (has a fresh `t`)
   useEffect(() => {
     const view = parseView(window.location.search);
-    const prefs = view.lines === null || view.bus === null ? loadPrefs() : null;
+    // A share link carries a camera or a selection. For those, a missing lines=/
+    // bus= means "the sharer had all lines on / no buses" (encodeView omits the
+    // default) — NOT "fall back to the recipient's saved prefs".
+    const isShare = view.camera !== null || view.selection !== null;
+    const prefs = !isShare && (view.lines === null || view.bus === null) ? loadPrefs() : null;
     if (view.lines !== null) setEnabledLines(new Set(view.lines));
     else if (prefs) setEnabledLines(new Set(prefs.lines));
     if (view.bus !== null) setEnabledBusRoutes(new Set(view.bus));
     else if (prefs) setEnabledBusRoutes(new Set(prefs.bus));
     restoredSel.current = view.selection;
-    restoredStale.current = isStaleShare(view.t);
+    // A train/vehicle selection is only trustable with a fresh timestamp: an
+    // address-bar/bookmark URL has no `t`, and a next-day link's train number is
+    // reused. Stations are static and always resolve regardless.
+    restoredSelFresh.current = view.t !== null && !isStaleShare(view.t);
     setHydrated(true);
   }, []);
 
@@ -106,10 +114,16 @@ export default function App() {
   const lastUrl = useRef<string | null>(null);
   useEffect(() => {
     if (!hydrated) return;
+    // Until the shared selection resolves (post-first-poll), keep encoding the
+    // pending restored sel so a Share — or the address bar — during the load
+    // window doesn't drop it. Once resolved, `selection` (or null if dropped) wins.
+    const pendingSel = selection
+      ? { kind: selection.kind, id: selection.id }
+      : shareResolved ? null : restoredSel.current;
     const search = encodeView({
       lines: Array.from(enabledLines),
       bus: Array.from(enabledBusRoutes),
-      selection: selection ? { kind: selection.kind, id: selection.id } : null,
+      selection: pendingSel,
       camera,
     });
     const url = window.location.pathname + search;
@@ -117,7 +131,7 @@ export default function App() {
       lastUrl.current = url;
       window.history.replaceState(null, "", url);
     }
-  }, [hydrated, enabledLines, enabledBusRoutes, selection, camera]);
+  }, [hydrated, enabledLines, enabledBusRoutes, selection, camera, shareResolved]);
 
   const pullTrains = useCallback(async () => {
     inflightTrains.current?.abort();
@@ -304,36 +318,41 @@ export default function App() {
     setSelection(s);
   }, [trains, vehicles, enabledLines, enabledBusRoutes]);
 
-  // Resolve a shared selection ONCE the first poll lands (trains/vehicles are []
-  // at mount). Degrade gracefully: stations always resolve; a stale (>4h) share
-  // or a train/vehicle no longer in the feed is dropped silently, leaving the
-  // durable camera+lines. handleSelect pins the unit's line so it shows.
-  const resolvedShare = useRef(false);
+  // Resolve a shared selection. Stations resolve immediately (static data);
+  // train/vehicle wait for the first poll, then degrade gracefully — an untrusted
+  // (no/stale `t`) share or a unit no longer in the feed is dropped silently,
+  // leaving the durable camera+lines. handleSelect pins the unit's line so it shows.
   useEffect(() => {
-    if (resolvedShare.current) return;
+    if (shareResolved) return;
     const sel = restoredSel.current;
-    if (!sel) { resolvedShare.current = true; return; }
-    if (trains.length === 0 && vehicles.length === 0) return; // wait for data
-    resolvedShare.current = true;
-    if (sel.kind === "station") { handleSelect(sel); return; }
-    if (restoredStale.current) return; // prior service day — don't chase a wrong unit
+    if (!sel) { setShareResolved(true); return; }
+    // Stations don't depend on live vehicle data — never gate them on the feed.
+    if (sel.kind === "station") { setShareResolved(true); handleSelect(sel); return; }
+    if (trains.length === 0 && vehicles.length === 0) return; // wait for the first poll
+    setShareResolved(true);
+    if (!restoredSelFresh.current) return; // no/stale timestamp — don't chase a wrong unit
     if (sel.kind === "train" && trains.some((t) => t.id === sel.id)) handleSelect(sel);
     else if (sel.kind === "vehicle" && vehicles.some((v) => v.id === sel.id)) handleSelect(sel);
-  }, [trains, vehicles, handleSelect]);
+  }, [shareResolved, trains, vehicles, handleSelect]);
 
   // The full shareable URL (with a `t` stamp so a stale selection can be dropped).
   const buildShareUrl = useCallback(() => {
+    // Same pending-selection logic as the writer, so sharing during the load
+    // window still carries the shared selection.
+    const sel = selection
+      ? { kind: selection.kind, id: selection.id }
+      : shareResolved ? null : restoredSel.current;
     const search = encodeView(
       {
         lines: Array.from(enabledLines),
         bus: Array.from(enabledBusRoutes),
-        selection: selection ? { kind: selection.kind, id: selection.id } : null,
+        selection: sel,
         camera,
       },
       { withTimestamp: true },
     );
     return window.location.origin + window.location.pathname + search;
-  }, [enabledLines, enabledBusRoutes, selection, camera]);
+  }, [enabledLines, enabledBusRoutes, selection, camera, shareResolved]);
 
   const [sheetState, setSheetState] = useState<"peek" | "half" | "full">("peek");
   const cycleSheet = useCallback(
