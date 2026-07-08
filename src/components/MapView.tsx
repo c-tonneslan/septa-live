@@ -113,6 +113,8 @@ interface Props {
   trip: Trip | null;
   selection: Selection;
   onSelect: (s: Selection) => void;
+  initialCamera?: { center: [number, number]; zoom: number } | null;
+  onViewChange?: (center: [number, number], zoom: number) => void;
 }
 
 export default function MapView({
@@ -124,7 +126,13 @@ export default function MapView({
   trip,
   selection,
   onSelect,
+  initialCamera,
+  onViewChange,
 }: Props) {
+  // onViewChange fires on every settle; keep the latest in a ref so the map's
+  // one-time init effect can register it without re-subscribing.
+  const onViewChangeRef = useRef(onViewChange);
+  onViewChangeRef.current = onViewChange;
   // When a vehicle/train is selected, dim every other line so its route pops.
   const highlightedLineId = (() => {
     if (!selection) return null;
@@ -202,8 +210,8 @@ export default function MapView({
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     const map = L.map(containerRef.current, {
-      center: CENTER,
-      zoom: INITIAL_ZOOM,
+      center: initialCamera?.center ?? CENTER,
+      zoom: initialCamera?.zoom ?? INITIAL_ZOOM,
       zoomControl: true,
       preferCanvas: true,
       // Keep the user in the SEPTA region — no zooming out to the whole globe or
@@ -244,6 +252,13 @@ export default function MapView({
     };
     applyZoomTiers();
     map.on("zoomend", applyZoomTiers);
+
+    // Report camera settle to the parent (for the shareable URL). center/zoom
+    // otherwise live only inside Leaflet.
+    map.on("moveend zoomend", () => {
+      const c = map.getCenter();
+      onViewChangeRef.current?.([c.lat, c.lng], map.getZoom());
+    });
 
     return () => {
       map.remove();
@@ -478,7 +493,7 @@ export default function MapView({
       }
     } else if (selection.kind === "vehicle") {
       const v = vehicles.find((x) => x.id === selection.id);
-      if (v) {
+      if (v && Number.isFinite(v.lat) && Number.isFinite(v.lon)) {
         flyToPoint(map, [v.lat, v.lon], 13);
         flew = true;
       }

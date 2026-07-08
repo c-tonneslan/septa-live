@@ -10,6 +10,8 @@ import { stations } from "@/data/stations";
 import { loadBusData, type BusRouteData } from "@/data/buses";
 import type { Trip } from "@/lib/router";
 import { loadPrefs, savePrefs, clearPrefs } from "@/lib/prefs";
+import { parseView, encodeView, isStaleShare, type ParsedView } from "@/lib/shareState";
+import ShareButton from "./ShareButton";
 
 const MapView = dynamic(() => import("./MapView"), {
   ssr: false,
@@ -56,19 +58,39 @@ export default function App() {
   const inflightTrains = useRef<AbortController | null>(null);
   const inflightVehicles = useRef<AbortController | null>(null);
 
-  // Persisted line/route preferences. Hydrate AFTER mount (localStorage is
-  // undefined during SSR; a lazy useState initializer would hydration-mismatch
-  // the server-rendered Sidebar/Legend). Start from the all-on default, then
-  // overwrite with saved prefs if any.
+  // Camera only feeds MapView (which is ssr:false), so it's safe to read the URL
+  // synchronously here — no SSR hydration surface. Filter state below must NOT.
+  const initialCamera = useMemo(
+    () => (typeof window === "undefined" ? null : parseView(window.location.search).camera),
+    [],
+  );
+  const [camera, setCamera] = useState(initialCamera);
+
+  // Resolve initial filter state with a single precedence: URL (explicit share)
+  // > localStorage (ambient pref) > all-on default. Hydrate AFTER mount so the
+  // server-rendered Sidebar/Legend don't hydration-mismatch. Stash the shared
+  // selection to resolve once live data arrives.
   const [hydrated, setHydrated] = useState(false);
   const justHydrated = useRef(true);
+  const restoredSel = useRef<ParsedView["selection"]>(null);
+  const restoredStale = useRef(false);
   useEffect(() => {
-    const p = loadPrefs();
-    if (p) {
-      setEnabledLines(new Set(p.lines));
-      setEnabledBusRoutes(new Set(p.bus));
-    }
+    const view = parseView(window.location.search);
+    const prefs = view.lines === null || view.bus === null ? loadPrefs() : null;
+    if (view.lines !== null) setEnabledLines(new Set(view.lines));
+    else if (prefs) setEnabledLines(new Set(prefs.lines));
+    if (view.bus !== null) setEnabledBusRoutes(new Set(view.bus));
+    else if (prefs) setEnabledBusRoutes(new Set(prefs.bus));
+    restoredSel.current = view.selection;
+    restoredStale.current = isStaleShare(view.t);
     setHydrated(true);
+  }, []);
+
+  // Debounced camera capture from the map's moveend/zoomend.
+  const camTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleViewChange = useCallback((center: [number, number], zoom: number) => {
+    if (camTimer.current) clearTimeout(camTimer.current);
+    camTimer.current = setTimeout(() => setCamera({ center, zoom }), 400);
   }, []);
   // Write only after a genuine post-hydration change — skipping the hydration
   // tick avoids both clobbering saved prefs and freezing the all-on default into
@@ -78,6 +100,24 @@ export default function App() {
     if (justHydrated.current) { justHydrated.current = false; return; }
     savePrefs({ lines: Array.from(enabledLines), bus: Array.from(enabledBusRoutes) });
   }, [hydrated, enabledLines, enabledBusRoutes]);
+
+  // Keep the URL in sync with the view (no `t` — that only stamps on an explicit
+  // Share). replaceState + a diff so panning doesn't spam history or the URL.
+  const lastUrl = useRef<string | null>(null);
+  useEffect(() => {
+    if (!hydrated) return;
+    const search = encodeView({
+      lines: Array.from(enabledLines),
+      bus: Array.from(enabledBusRoutes),
+      selection: selection ? { kind: selection.kind, id: selection.id } : null,
+      camera,
+    });
+    const url = window.location.pathname + search;
+    if (url !== lastUrl.current) {
+      lastUrl.current = url;
+      window.history.replaceState(null, "", url);
+    }
+  }, [hydrated, enabledLines, enabledBusRoutes, selection, camera]);
 
   const pullTrains = useCallback(async () => {
     inflightTrains.current?.abort();
@@ -264,6 +304,37 @@ export default function App() {
     setSelection(s);
   }, [trains, vehicles, enabledLines, enabledBusRoutes]);
 
+  // Resolve a shared selection ONCE the first poll lands (trains/vehicles are []
+  // at mount). Degrade gracefully: stations always resolve; a stale (>4h) share
+  // or a train/vehicle no longer in the feed is dropped silently, leaving the
+  // durable camera+lines. handleSelect pins the unit's line so it shows.
+  const resolvedShare = useRef(false);
+  useEffect(() => {
+    if (resolvedShare.current) return;
+    const sel = restoredSel.current;
+    if (!sel) { resolvedShare.current = true; return; }
+    if (trains.length === 0 && vehicles.length === 0) return; // wait for data
+    resolvedShare.current = true;
+    if (sel.kind === "station") { handleSelect(sel); return; }
+    if (restoredStale.current) return; // prior service day — don't chase a wrong unit
+    if (sel.kind === "train" && trains.some((t) => t.id === sel.id)) handleSelect(sel);
+    else if (sel.kind === "vehicle" && vehicles.some((v) => v.id === sel.id)) handleSelect(sel);
+  }, [trains, vehicles, handleSelect]);
+
+  // The full shareable URL (with a `t` stamp so a stale selection can be dropped).
+  const buildShareUrl = useCallback(() => {
+    const search = encodeView(
+      {
+        lines: Array.from(enabledLines),
+        bus: Array.from(enabledBusRoutes),
+        selection: selection ? { kind: selection.kind, id: selection.id } : null,
+        camera,
+      },
+      { withTimestamp: true },
+    );
+    return window.location.origin + window.location.pathname + search;
+  }, [enabledLines, enabledBusRoutes, selection, camera]);
+
   const [sheetState, setSheetState] = useState<"peek" | "half" | "full">("peek");
   const cycleSheet = useCallback(
     () =>
@@ -313,6 +384,8 @@ export default function App() {
             trip={trip}
             selection={selection}
             onSelect={handleSelect}
+            initialCamera={initialCamera}
+            onViewChange={handleViewChange}
           />
           <Legend
             trainsAt={trainsAt}
@@ -322,6 +395,7 @@ export default function App() {
             vehicleCount={visibleVehicles.length}
             busRouteCount={enabledBusRoutes.size}
           />
+          <ShareButton getUrl={buildShareUrl} />
         </div>
 
         {/* Sidebar/bottom-sheet wrapper. On desktop it's a fixed-width right
