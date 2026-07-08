@@ -1,20 +1,13 @@
 import Link from "next/link";
 import { lookupLine } from "@/data/lines";
-
-interface LineRollup {
-  line: string;
-  avgTrainsPerSample: number;
-  onTimePct: number | null;
-  avgDelay: number;
-  majorDelays: number;
-}
-
-interface HourBucket {
-  hour: number;
-  onTimePct: number | null;
-  avgDelay: number;
-  samples: number;
-}
+import {
+  rankLines,
+  bestWorst,
+  freshness,
+  isThinSample,
+  type LineRollup,
+  type HourBucket,
+} from "@/lib/statsView";
 
 interface Stats {
   generatedAt: string;
@@ -54,7 +47,7 @@ export default async function StatsPage() {
 
   return (
     <main className="min-h-full bg-background text-foreground px-6 py-10">
-      <div className="max-w-4xl mx-auto space-y-8">
+      <div className="max-w-4xl mx-auto space-y-6">
         <header className="flex items-baseline justify-between gap-4 flex-wrap">
           <div>
             <h1 className="text-2xl font-bold">SEPTA reliability</h1>
@@ -75,8 +68,13 @@ export default async function StatsPage() {
           <Empty />
         ) : (
           <>
+            <FreshnessStrip generatedAt={stats.generatedAt} />
             <Headline stats={stats} />
-            <LineTable lines={stats.lines} />
+            {isThinSample(stats.totalSnapshots) && (
+              <SampleCaveat count={stats.totalSnapshots} start={stats.coverageStart} />
+            )}
+            <BestWorst lines={stats.lines} />
+            <LineRanking lines={stats.lines} />
             <HourlyChart hourly={stats.hourly} />
             <Footer stats={stats} />
           </>
@@ -98,17 +96,44 @@ function Empty() {
   );
 }
 
+function FreshnessStrip({ generatedAt }: { generatedAt: string }) {
+  const f = freshness(generatedAt);
+  if (!f.isStale) {
+    return (
+      <p className="text-xs font-mono text-muted">
+        updated {new Date(generatedAt).toLocaleString()}
+      </p>
+    );
+  }
+  return (
+    <div className="border border-amber-500/40 bg-amber-500/10 text-amber-200 rounded-md px-3 py-2 text-sm">
+      Snapshot is <span className="font-semibold">{f.label}</span> — the collector looks paused
+      (last write {new Date(generatedAt).toLocaleString()}). Shown for reference, not live.
+    </div>
+  );
+}
+
+function SampleCaveat({ count, start }: { count: number; start: string | null }) {
+  return (
+    <p className="text-xs text-muted border-l-2 border-panel-border pl-3">
+      Based on {count} snapshots{start ? ` since ${new Date(start).toLocaleDateString()}` : ""} —
+      a small sample, so treat the rankings as indicative rather than definitive.
+    </p>
+  );
+}
+
 function Headline({ stats }: { stats: Stats }) {
   const h = stats.headline!;
+  // Lead with on-time %. avgDelay is dropped from the headline — a single-snapshot
+  // mean is outlier-poisoned (one stuck train swings it to 100+ min).
   return (
-    <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
-      <Stat label="Trains in service" value={h.trainsInService.toString()} />
+    <section className="grid grid-cols-3 gap-3">
       <Stat
         label="On time"
         value={h.onTimePct !== null ? `${h.onTimePct}%` : "—"}
         tone={h.onTimePct !== null && h.onTimePct >= 85 ? "good" : "warn"}
       />
-      <Stat label="Avg delay" value={`${h.avgDelay} min`} />
+      <Stat label="Trains in service" value={h.trainsInService.toString()} />
       <Stat
         label="10+ min late"
         value={h.majorDelays.toString()}
@@ -137,82 +162,110 @@ function Stat({
   );
 }
 
-function LineTable({ lines }: { lines: LineRollup[] }) {
+function BestWorst({ lines }: { lines: LineRollup[] }) {
+  const { best, worst } = bestWorst(lines);
+  if (!best || !worst) return null;
+  const card = (l: LineRollup, label: string, tone: "good" | "warn") => {
+    const line = lookupLine(l.line);
+    return (
+      <div className="flex-1 border border-panel-border rounded-md p-3 bg-panel/40">
+        <div className="text-xs uppercase tracking-widest text-muted">{label}</div>
+        <div className="flex items-center gap-2 mt-1">
+          <span className="w-3 h-3 rounded-sm shrink-0" style={{ background: line?.color ?? "#888" }} />
+          <span className="font-semibold truncate">{line?.name ?? l.line}</span>
+          <span className={`font-mono ml-auto ${tone === "good" ? "text-emerald-300" : "text-amber-300"}`}>
+            {l.onTimePct}%
+          </span>
+        </div>
+      </div>
+    );
+  };
+  return (
+    <section className="space-y-1">
+      <div className="flex gap-3">
+        {card(best, "Most reliable", "good")}
+        {card(worst, "Least reliable", "warn")}
+      </div>
+      <p className="text-[11px] text-muted">indicative — small sample</p>
+    </section>
+  );
+}
+
+function LineRanking({ lines }: { lines: LineRollup[] }) {
+  const ranked = rankLines(lines);
   return (
     <section>
-      <h2 className="text-sm uppercase tracking-widest text-muted mb-3">
-        Last 7 days, by line
-      </h2>
-      <div className="border border-panel-border rounded-md overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-panel/60 text-xs uppercase tracking-wider text-muted">
-            <tr>
-              <th className="text-left px-3 py-2">Line</th>
-              <th className="text-right px-3 py-2">On-time</th>
-              <th className="text-right px-3 py-2">Avg delay</th>
-              <th className="text-right px-3 py-2">10+ late</th>
-              <th className="text-right px-3 py-2">Trains</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-panel-border">
-            {lines.map((l) => {
-              const line = lookupLine(l.line);
-              return (
-                <tr key={l.line}>
-                  <td className="px-3 py-2 flex items-center gap-2">
-                    <span
-                      className="w-3 h-3 rounded-sm shrink-0"
-                      style={{ background: line?.color ?? "#888" }}
-                    />
-                    <span>{line?.name ?? l.line}</span>
-                  </td>
-                  <td className="px-3 py-2 text-right font-mono">
-                    {l.onTimePct !== null ? `${l.onTimePct}%` : "—"}
-                  </td>
-                  <td className="px-3 py-2 text-right font-mono">{l.avgDelay} min</td>
-                  <td className="px-3 py-2 text-right font-mono text-red-400">
-                    {l.majorDelays}
-                  </td>
-                  <td className="px-3 py-2 text-right font-mono text-muted">
-                    {l.avgTrainsPerSample}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      <h2 className="text-sm uppercase tracking-widest text-muted mb-3">Last 7 days, by line</h2>
+      <div className="border border-panel-border rounded-md divide-y divide-panel-border">
+        {ranked.map((l) => {
+          const line = lookupLine(l.line);
+          const rated = l.onTimePct !== null;
+          return (
+            <div key={l.line} className={`px-3 py-2.5 flex items-center gap-3 ${rated ? "" : "opacity-50"}`}>
+              <span className="font-mono text-xs text-muted w-5 shrink-0 text-right">{l.rank}</span>
+              <span className="w-3 h-3 rounded-sm shrink-0" style={{ background: line?.color ?? "#888" }} />
+              <span className="w-40 shrink-0 truncate text-sm">{line?.name ?? l.line}</span>
+              {/* on-time bar on a fixed 0–100 scale (not scaled to the data max) */}
+              <div className="flex-1 h-2 rounded-full bg-panel-border/40 overflow-hidden">
+                {rated && (
+                  <div
+                    className="h-full rounded-full"
+                    style={{ width: `${l.onTimePct}%`, background: line?.color ?? "#888" }}
+                  />
+                )}
+              </div>
+              <span className="font-mono text-sm w-12 text-right shrink-0">
+                {rated ? `${l.onTimePct}%` : "—"}
+              </span>
+              <span className="font-mono text-[11px] text-muted w-24 text-right shrink-0 hidden sm:inline">
+                {l.avgTrainsPerSample} trains/poll
+              </span>
+            </div>
+          );
+        })}
       </div>
+      <p className="text-[11px] text-muted mt-1">
+        Ranked by on-time %. &quot;10+ min late&quot; counts are available in the raw data.
+      </p>
     </section>
   );
 }
 
 function HourlyChart({ hourly }: { hourly: HourBucket[] }) {
-  const maxDelay = Math.max(0.5, ...hourly.map((h) => h.avgDelay));
   return (
     <section>
       <h2 className="text-sm uppercase tracking-widest text-muted mb-3">
-        Last 24h, average delay by hour (Eastern Time)
+        On-time % by hour (Eastern Time)
       </h2>
       <div className="border border-panel-border rounded-md p-4 bg-panel/40">
         <div className="flex items-end gap-1 h-32">
           {hourly.map((h) => {
-            const heightPct = (h.avgDelay / maxDelay) * 100;
-            const has = h.samples > 0;
+            const has = h.samples > 0 && h.onTimePct !== null;
+            const pct = has ? (h.onTimePct as number) : 0;
             return (
-              <div
-                key={h.hour}
-                className="flex-1 flex flex-col items-center justify-end gap-1"
-              >
-                <div
-                  className={`w-full rounded-sm ${has ? "bg-sky-500/70" : "bg-panel-border/30"}`}
-                  style={{ height: `${has ? heightPct : 4}%` }}
-                  title={has ? `${h.hour}:00 — ${h.avgDelay.toFixed(1)} min avg` : `${h.hour}:00 — no data`}
-                />
+              <div key={h.hour} className="flex-1 flex flex-col items-center justify-end gap-1">
+                {has ? (
+                  <div
+                    className="w-full rounded-sm bg-sky-500/70"
+                    style={{ height: `${pct}%` }}
+                    title={`${h.hour}:00 — ${pct}% on time · ${h.samples} sample${h.samples === 1 ? "" : "s"}`}
+                  />
+                ) : (
+                  // distinct "no data" stub — never a 0-height bar that reads as 0% on time
+                  <div
+                    className="w-full h-1.5 rounded-sm bg-panel-border/40 border border-dashed border-panel-border"
+                    title={`${h.hour}:00 — no data`}
+                  />
+                )}
                 <div className="text-[9px] font-mono text-muted">{h.hour}</div>
               </div>
             );
           })}
         </div>
+        <p className="text-[11px] text-muted mt-2">
+          Bars show on-time % (taller = better). Dashed stubs are hours with no snapshot; most hours
+          have a single sample.
+        </p>
       </div>
     </section>
   );
