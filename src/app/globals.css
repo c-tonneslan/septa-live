@@ -30,6 +30,12 @@
 
 html, body { height: 100%; }
 
+/* iOS Safari force-zooms any focused input rendered under 16px, which shoves the
+   bottom sheet and map off-center on every search. Keep inputs at 16px on phones. */
+@media (max-width: 767px) {
+  input { font-size: 16px; }
+}
+
 /* Visible focus ring for keyboard navigation — invisible to mouse users
    because we only apply it on :focus-visible, which excludes click focus. */
 :focus { outline: none; }

@@ -54,14 +54,18 @@ export default function Sidebar({
       </header>
 
       <div className="flex-1 overflow-y-auto scrollbar-thin">
-        {selection ? (
+        {selection && (
           <DetailPanel
             selection={selection}
             trains={trains}
             vehicles={vehicles}
             onClose={() => onSelect(null)}
           />
-        ) : (
+        )}
+        {/* LinePanel stays MOUNTED (just hidden) while a detail panel is open, so
+            an in-progress trip plan, bus search, and station query survive a
+            marker selection instead of being destroyed by an unmount. */}
+        <div className={selection ? "hidden" : ""}>
           <LinePanel
             trains={trains}
             vehicles={vehicles}
@@ -75,7 +79,7 @@ export default function Sidebar({
             onShowTrip={onShowTrip}
             onSelect={onSelect}
           />
-        )}
+        </div>
       </div>
     </aside>
   );
@@ -160,6 +164,14 @@ function LinePanel({
         </div>
       </section>
 
+      {/* The two primary rider tasks, promoted above the line filters. */}
+      <TripPlanner onShowTrip={onShowTrip} />
+
+      <section>
+        <h2 className="text-xs uppercase tracking-widest text-muted mb-2">Find a station</h2>
+        <StationPicker onPick={(id) => onSelect({ kind: "station", id })} />
+      </section>
+
       {MODE_GROUPS.map((group) => {
         const linesInGroup = lines.filter((l) => group.modes.includes(l.mode));
         if (linesInGroup.length === 0) return null;
@@ -237,13 +249,6 @@ function LinePanel({
         onToggleBusRoute={onToggleBusRoute}
         onClearBusRoutes={onClearBusRoutes}
       />
-
-      <TripPlanner onShowTrip={onShowTrip} />
-
-      <section>
-        <h2 className="text-xs uppercase tracking-widest text-muted mb-2">Find a station</h2>
-        <StationPicker onPick={(id) => onSelect({ kind: "station", id })} />
-      </section>
     </div>
   );
 }
@@ -300,23 +305,31 @@ function TripPlanner({
 
   return (
     <section>
-      <div className="flex items-center justify-between mb-2">
-        <h2 className="text-xs uppercase tracking-widest text-muted">Trip planner</h2>
-        <div className="flex items-center gap-2">
-          {trip && (
-            <button onClick={clear} className="text-[10px] font-mono text-muted hover:text-foreground">
-              clear
+      {!open ? (
+        <button
+          onClick={() => setOpen(true)}
+          className="w-full py-2 rounded border border-accent/40 text-sm font-medium text-foreground hover:bg-panel-hover hover:border-accent transition-colors"
+        >
+          Plan a trip →
+        </button>
+      ) : (
+        <>
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-xs uppercase tracking-widest text-muted">Trip planner</h2>
+          <div className="flex items-center gap-2">
+            {trip && (
+              <button onClick={clear} className="text-[10px] font-mono text-muted hover:text-foreground">
+                clear
+              </button>
+            )}
+            <button
+              onClick={() => setOpen(false)}
+              className="text-[10px] font-mono text-muted hover:text-foreground"
+            >
+              hide
             </button>
-          )}
-          <button
-            onClick={() => setOpen((o) => !o)}
-            className="text-[10px] font-mono text-muted hover:text-foreground"
-          >
-            {open ? "hide" : "show"}
-          </button>
+          </div>
         </div>
-      </div>
-      {open && (
         <div className="space-y-2">
           {!graphState && !graphErr && (
             <div className="text-xs text-muted">Loading SEPTA network…</div>
@@ -354,6 +367,7 @@ function TripPlanner({
             </>
           )}
         </div>
+        </>
       )}
     </section>
   );
@@ -384,7 +398,8 @@ function StopPicker({
         value={value}
         onChange={(e) => onChange(e.target.value, null)}
         placeholder={placeholder}
-        className="w-full bg-background border border-panel-border rounded px-2 py-1.5 text-sm placeholder:text-muted focus:outline-none focus:border-sky-500"
+        aria-label={placeholder}
+        className="w-full bg-background border border-panel-border rounded px-2 py-1.5 text-sm placeholder:text-muted focus:outline-none focus:border-accent"
       />
       {filtered.length > 0 && (
         <ul className="mt-1 border border-panel-border rounded divide-y divide-panel-border max-h-48 overflow-y-auto scrollbar-thin">
@@ -408,15 +423,29 @@ function StopPicker({
 }
 
 function TripDisplay({ trip }: { trip: Trip }) {
+  // Wall-clock estimates from now. The router uses distance/speed, not live
+  // timetables, so label them as estimates rather than implying a schedule.
+  const now = new Date();
+  const at = (mins: number) =>
+    new Date(now.getTime() + mins * 60_000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  let acc = 0;
+  const legStart = trip.legs.map((leg) => {
+    const s = acc;
+    acc += leg.minutes;
+    return s;
+  });
+
   return (
     <div className="border border-panel-border rounded p-2.5 bg-background/40 space-y-2">
       <div className="flex items-center justify-between text-sm">
-        <span className="font-bold">
-          {Math.round(trip.totalMinutes)} min
-        </span>
+        <span className="font-bold">{Math.round(trip.totalMinutes)} min</span>
         <span className="text-xs text-muted font-mono">
           {trip.transfers} transfer{trip.transfers === 1 ? "" : "s"}
         </span>
+      </div>
+      <div className="text-xs text-muted">
+        leave {at(0)} → arrive {at(trip.totalMinutes)}{" "}
+        <span className="text-muted/60">· est.</span>
       </div>
       <ol className="space-y-1.5">
         {trip.legs.map((leg, i) => (
@@ -443,6 +472,9 @@ function TripDisplay({ trip }: { trip: Trip }) {
                     {leg.routeName}
                   </div>
                   <div className="text-muted">
+                    board ~{at(legStart[i])} toward {leg.toStop.name}
+                  </div>
+                  <div className="text-muted/70">
                     {leg.fromStop.name} → {leg.toStop.name} ({Math.round(leg.minutes)} min)
                   </div>
                 </div>
@@ -549,7 +581,8 @@ function BusPanel({
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="33, City Hall, Frankford…"
-            className="w-full bg-background border border-panel-border rounded px-2 py-1.5 text-sm placeholder:text-muted focus:outline-none focus:border-sky-500 mb-2"
+            aria-label="Search bus routes"
+            className="w-full bg-background border border-panel-border rounded px-2 py-1.5 text-sm placeholder:text-muted focus:outline-none focus:border-accent mb-2"
           />
           <ul className="space-y-0.5 max-h-80 overflow-y-auto scrollbar-thin">
             {filtered.slice(0, 200).map((r) => {
@@ -596,7 +629,8 @@ function StationPicker({ onPick }: { onPick: (id: string) => void }) {
         value={q}
         onChange={(e) => setQ(e.target.value)}
         placeholder="Suburban, Trenton, 30th, Girard…"
-        className="w-full bg-background border border-panel-border rounded px-2 py-1.5 text-sm placeholder:text-muted focus:outline-none focus:border-sky-500"
+        aria-label="Search stations"
+        className="w-full bg-background border border-panel-border rounded px-2 py-1.5 text-sm placeholder:text-muted focus:outline-none focus:border-accent"
       />
       {filtered.length > 0 && (
         <ul className="mt-1 border border-panel-border rounded divide-y divide-panel-border">
