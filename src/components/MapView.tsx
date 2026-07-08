@@ -380,7 +380,10 @@ export default function MapView({
     if (!layer) return;
     layer.clearLayers();
     for (const s of stations) {
-      const m = L.marker([s.lat, s.lon], { icon: stationIcon(s) });
+      // keyboard:false keeps the hundreds of markers out of the tab order (a
+      // screen reader would otherwise hear hundreds of nameless buttons before
+      // the sidebar); title gives the marker an accessible name + hover tooltip.
+      const m = L.marker([s.lat, s.lon], { icon: stationIcon(s), keyboard: false, title: s.name });
       m.bindTooltip(s.name, { direction: "top", offset: [0, -6] });
       m.on("click", () => onSelect({ kind: "station", id: s.id }));
       layer.addLayer(m);
@@ -401,12 +404,11 @@ export default function MapView({
         tweenMarkerTo(`t-${t.id}`, existing, [t.lat, t.lon]);
         existing.setIcon(trainIcon(t, selected));
       } else {
-        const m = L.marker([t.lat, t.lon], { icon: trainIcon(t, selected) });
-        m.bindTooltip(
+        const label =
           `Train ${t.id} · ${t.lineShort ?? t.line} → ${t.destination}` +
-            (t.lateMinutes > 0 ? ` · ${t.lateMinutes}m late` : ""),
-          { direction: "top", offset: [0, -10] },
-        );
+          (t.lateMinutes > 0 ? ` · ${t.lateMinutes}m late` : "");
+        const m = L.marker([t.lat, t.lon], { icon: trainIcon(t, selected), keyboard: false, title: label });
+        m.bindTooltip(label, { direction: "top", offset: [0, -10] });
         m.on("click", () => onSelect({ kind: "train", id: t.id }));
         m.addTo(layer);
         trainMarkers.current.set(t.id, m);
@@ -437,12 +439,11 @@ export default function MapView({
         tweenMarkerTo(`v-${v.id}`, existing, [v.lat, v.lon]);
         existing.setIcon(vehicleIcon(v, selected));
       } else {
-        const m = L.marker([v.lat, v.lon], { icon: vehicleIcon(v, selected) });
-        m.bindTooltip(
+        const label =
           `${v.lineShort ?? v.rawRouteId} · ${v.label} → ${v.destination}` +
-            (v.lateMinutes > 0 ? ` · ${v.lateMinutes}m late` : ""),
-          { direction: "top", offset: [0, -8] },
-        );
+          (v.lateMinutes > 0 ? ` · ${v.lateMinutes}m late` : "");
+        const m = L.marker([v.lat, v.lon], { icon: vehicleIcon(v, selected), keyboard: false, title: label });
+        m.bindTooltip(label, { direction: "top", offset: [0, -8] });
         m.on("click", () => onSelect({ kind: "vehicle", id: v.id }));
         m.addTo(layer);
         vehicleMarkers.current.set(v.id, m);

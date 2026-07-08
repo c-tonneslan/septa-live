@@ -23,12 +23,15 @@ export default function AlertsBar({
   );
   const [idx, setIdx] = useState(0);
   const [open, setOpen] = useState(false);
+  // Pause the auto-rotation on hover/focus so riders (and slow readers) can
+  // actually finish reading a safety alert (WCAG 2.2.2).
+  const [paused, setPaused] = useState(false);
 
   useEffect(() => {
-    if (interesting.length <= 1) return;
+    if (interesting.length <= 1 || paused) return;
     const t = setInterval(() => setIdx((i) => (i + 1) % interesting.length), 8000);
     return () => clearInterval(t);
-  }, [interesting.length]);
+  }, [interesting.length, paused]);
 
   // Alerts get refetched every 60s. If the list shrunk past our cursor,
   // interesting[idx] is undefined and we crash on .severity below. Pull
@@ -61,17 +64,26 @@ export default function AlertsBar({
   const cls = severityColor[current.severity];
 
   return (
-    <div className={`border-b border-panel-border ${cls.split(" ").slice(0,2).join(" ")}`}>
+    <div
+      className={`border-b border-panel-border ${cls.split(" ").slice(0,2).join(" ")}`}
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onFocusCapture={() => setPaused(true)}
+      onBlurCapture={() => setPaused(false)}
+    >
       <div className="px-4 py-2 flex items-center gap-3 text-sm">
         <span className={`uppercase font-mono text-[10px] px-1.5 py-0.5 rounded border ${cls}`}>
           {current.severity}
         </span>
-        <span className="font-mono text-xs opacity-80">{current.routeName}</span>
-        <span className="truncate flex-1">
+        {/* routeName + counter kept off the narrowest phones so the message keeps its width */}
+        <span className="hidden sm:inline font-mono text-xs opacity-80">{current.routeName}</span>
+        {/* aria-live so assistive tech announces the current alert */}
+        <span className="truncate flex-1" role="status" aria-live="polite">
+          {current.routeName ? `${current.routeName}: ` : ""}
           {current.message || current.advisory || current.detour}
         </span>
-        <span className="text-xs font-mono opacity-60 whitespace-nowrap">
-          {safeIdx + 1}/{interesting.length}
+        <span className="hidden sm:inline text-xs font-mono opacity-60 whitespace-nowrap">
+          {paused ? "paused" : `${safeIdx + 1}/${interesting.length}`}
         </span>
         <button
           onClick={() => setOpen((o) => !o)}

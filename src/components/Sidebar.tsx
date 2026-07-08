@@ -182,7 +182,8 @@ function LinePanel({
               <h2 className="text-xs uppercase tracking-widest text-muted">{group.label}</h2>
               <button
                 onClick={() => onSetModeLines(group.modes, !anyOn)}
-                className="text-[10px] font-mono text-muted hover:text-foreground"
+                aria-label={`${anyOn ? "Hide" : "Show"} all ${group.label}`}
+                className="text-[10px] font-mono text-muted hover:text-foreground p-2 -m-2"
               >
                 {anyOn ? "hide" : "show"}
               </button>
@@ -197,7 +198,7 @@ function LinePanel({
                       onClick={() => onToggleLine(l.id)}
                       aria-pressed={enabled}
                       aria-label={`${l.name}${counts ? `, ${counts.total} active, ${counts.late} late` : ""}`}
-                      className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded text-left text-sm transition-colors ${
+                      className={`w-full flex items-center gap-2.5 px-2 py-2 md:py-1.5 rounded text-left text-sm transition-colors ${
                         enabled ? "hover:bg-panel-border/40" : "opacity-40 hover:opacity-70"
                       }`}
                     >
