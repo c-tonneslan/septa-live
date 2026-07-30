@@ -1,20 +1,20 @@
 {
-  "generatedAt": "2026-07-30T04:22:27.082Z",
-  "totalSnapshots": 337,
+  "generatedAt": "2026-07-30T07:15:06.408Z",
+  "totalSnapshots": 338,
   "coverageStart": "2026-05-17T22:10:53.304Z",
   "headline": {
-    "ts": "2026-07-30T04:22:27.050Z",
-    "trainsInService": 11,
-    "onTimePct": 63.6,
-    "avgDelay": 2.82,
-    "majorDelays": 1
+    "ts": "2026-07-30T07:15:06.369Z",
+    "trainsInService": 1,
+    "onTimePct": 100,
+    "avgDelay": 0,
+    "majorDelays": 0
   },
   "lines": [
     {
       "line": "NOR",
       "avgTrainsPerSample": 2.8,
-      "onTimePct": 76.4,
-      "avgDelay": 3.68,
+      "onTimePct": 76.1,
+      "avgDelay": 3.73,
       "majorDelays": 17
     },
     {
@@ -34,8 +34,8 @@
     {
       "line": "PAO",
       "avgTrainsPerSample": 4,
-      "onTimePct": 66.5,
-      "avgDelay": 4.8,
+      "onTimePct": 66.3,
+      "avgDelay": 4.83,
       "majorDelays": 36
     },
     {
@@ -55,15 +55,15 @@
     {
       "line": "CHE",
       "avgTrainsPerSample": 2.1,
-      "onTimePct": 63.7,
-      "avgDelay": 5.76,
+      "onTimePct": 63.9,
+      "avgDelay": 5.78,
       "majorDelays": 23
     },
     {
       "line": "WTR",
       "avgTrainsPerSample": 2.4,
-      "onTimePct": 62.9,
-      "avgDelay": 5.08,
+      "onTimePct": 63.3,
+      "avgDelay": 5.09,
       "majorDelays": 26
     },
     {
@@ -82,9 +82,9 @@
     },
     {
       "line": "MED",
-      "avgTrainsPerSample": 2.4,
-      "onTimePct": 56.3,
-      "avgDelay": 4.32,
+      "avgTrainsPerSample": 2.5,
+      "onTimePct": 56.1,
+      "avgDelay": 4.34,
       "majorDelays": 22
     },
     {
@@ -105,9 +105,9 @@
   "hourly": [
     {
       "hour": 0,
-      "onTimePct": 59.6,
-      "avgDelay": 3.19,
-      "samples": 2
+      "onTimePct": 63.6,
+      "avgDelay": 2.82,
+      "samples": 1
     },
     {
       "hour": 1,
@@ -123,9 +123,9 @@
     },
     {
       "hour": 3,
-      "onTimePct": 0,
-      "avgDelay": 9,
-      "samples": 1
+      "onTimePct": 50,
+      "avgDelay": 4.5,
+      "samples": 2
     },
     {
       "hour": 4,
