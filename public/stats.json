@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-08-08T05:57:58.323Z",
-  "totalSnapshots": 454,
+  "generatedAt": "2026-08-08T07:06:14.618Z",
+  "totalSnapshots": 455,
   "coverageStart": "2026-05-17T22:10:53.304Z",
   "headline": {
-    "ts": "2026-08-08T05:57:58.291Z",
+    "ts": "2026-08-08T07:06:14.584Z",
     "trainsInService": 9,
     "onTimePct": 88.9,
     "avgDelay": 13.22,
@@ -20,8 +20,8 @@
     {
       "line": "FOX",
       "avgTrainsPerSample": 2.2,
-      "onTimePct": 82.8,
-      "avgDelay": 1.41,
+      "onTimePct": 83.1,
+      "avgDelay": 1.39,
       "majorDelays": 3
     },
     {
@@ -34,8 +34,8 @@
     {
       "line": "CHE",
       "avgTrainsPerSample": 2.2,
-      "onTimePct": 63.6,
-      "avgDelay": 2.85,
+      "onTimePct": 63.9,
+      "avgDelay": 2.83,
       "majorDelays": 11
     },
     {
@@ -55,23 +55,23 @@
     {
       "line": "TRE",
       "avgTrainsPerSample": 2.9,
-      "onTimePct": 60.1,
-      "avgDelay": 3.41,
+      "onTimePct": 60.6,
+      "avgDelay": 3.37,
       "majorDelays": 17
     },
     {
       "line": "CHW",
       "avgTrainsPerSample": 1.9,
-      "onTimePct": 60,
-      "avgDelay": 3.12,
+      "onTimePct": 60.4,
+      "avgDelay": 3.09,
       "majorDelays": 9
     },
     {
       "line": "LAN",
       "avgTrainsPerSample": 3.3,
-      "onTimePct": 59.9,
-      "avgDelay": 3.94,
-      "majorDelays": 28
+      "onTimePct": 59.7,
+      "avgDelay": 4.34,
+      "majorDelays": 29
     },
     {
       "line": "WTR",
@@ -90,8 +90,8 @@
     {
       "line": "PAO",
       "avgTrainsPerSample": 3.5,
-      "onTimePct": 54.8,
-      "avgDelay": 3.7,
+      "onTimePct": 54.9,
+      "avgDelay": 3.68,
       "majorDelays": 33
     },
     {
@@ -117,15 +117,15 @@
     },
     {
       "hour": 2,
-      "onTimePct": 75,
-      "avgDelay": 1.75,
-      "samples": 1
-    },
-    {
-      "hour": 3,
       "onTimePct": null,
       "avgDelay": 0,
       "samples": 0
+    },
+    {
+      "hour": 3,
+      "onTimePct": 88.9,
+      "avgDelay": 13.22,
+      "samples": 1
     },
     {
       "hour": 4,
