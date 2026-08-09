@@ -1,12 +1,12 @@
 {
-  "generatedAt": "2026-08-09T07:08:55.707Z",
-  "totalSnapshots": 483,
+  "generatedAt": "2026-08-09T08:02:29.723Z",
+  "totalSnapshots": 484,
   "coverageStart": "2026-05-17T22:10:53.304Z",
   "headline": {
-    "ts": "2026-08-09T07:08:55.684Z",
+    "ts": "2026-08-09T08:02:29.702Z",
     "trainsInService": 1,
     "onTimePct": 0,
-    "avgDelay": 3,
+    "avgDelay": 5,
     "majorDelays": 0
   },
   "lines": [
@@ -41,7 +41,7 @@
     {
       "line": "CHE",
       "avgTrainsPerSample": 2.2,
-      "onTimePct": 63.1,
+      "onTimePct": 62.8,
       "avgDelay": 3.57,
       "majorDelays": 18
     },
@@ -130,7 +130,7 @@
     {
       "hour": 4,
       "onTimePct": 0,
-      "avgDelay": 119,
+      "avgDelay": 5,
       "samples": 1
     },
     {
