@@ -652,3 +652,4 @@
 {"ts":"2026-08-16T06:47:03.683Z","total":3,"onTime":3,"late3":0,"late10":0,"avgDelay":0,"byLine":{"AIR":{"total":2,"late3":0,"late10":0,"delaySum":0},"FOX":{"total":1,"late3":0,"late10":0,"delaySum":0}}}
 {"ts":"2026-08-16T07:34:49.195Z","total":1,"onTime":1,"late3":0,"late10":0,"avgDelay":0,"byLine":{"AIR":{"total":1,"late3":0,"late10":0,"delaySum":0}}}
 {"ts":"2026-08-16T08:01:45.094Z","total":1,"onTime":1,"late3":0,"late10":0,"avgDelay":0,"byLine":{"AIR":{"total":1,"late3":0,"late10":0,"delaySum":0}}}
+{"ts":"2026-08-16T08:48:07.473Z","total":3,"onTime":2,"late3":1,"late10":0,"avgDelay":2.33,"byLine":{"AIR":{"total":2,"late3":1,"late10":0,"delaySum":7},"WAR":{"total":1,"late3":0,"late10":0,"delaySum":0}}}
