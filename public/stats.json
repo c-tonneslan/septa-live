@@ -1,12 +1,12 @@
 {
-  "generatedAt": "2026-08-20T06:53:01.633Z",
-  "totalSnapshots": 793,
+  "generatedAt": "2026-08-20T07:44:54.071Z",
+  "totalSnapshots": 794,
   "coverageStart": "2026-05-17T22:10:53.304Z",
   "headline": {
-    "ts": "2026-08-20T06:53:01.606Z",
-    "trainsInService": 4,
+    "ts": "2026-08-20T07:44:54.044Z",
+    "trainsInService": 1,
     "onTimePct": 100,
-    "avgDelay": 0,
+    "avgDelay": 2,
     "majorDelays": 0
   },
   "lines": [
@@ -83,8 +83,8 @@
     {
       "line": "TRE",
       "avgTrainsPerSample": 2.7,
-      "onTimePct": 55.8,
-      "avgDelay": 6.76,
+      "onTimePct": 55.9,
+      "avgDelay": 6.75,
       "majorDelays": 109
     },
     {
@@ -124,7 +124,7 @@
     {
       "hour": 3,
       "onTimePct": 75,
-      "avgDelay": 1.25,
+      "avgDelay": 2.25,
       "samples": 2
     },
     {
