@@ -859,3 +859,4 @@
 {"ts":"2026-08-22T07:00:31.148Z","total":7,"onTime":6,"late3":1,"late10":1,"avgDelay":1.57,"byLine":{"LAN":{"total":1,"late3":1,"late10":1,"delaySum":11},"WIL":{"total":2,"late3":0,"late10":0,"delaySum":0},"WTR":{"total":1,"late3":0,"late10":0,"delaySum":0},"TRE":{"total":3,"late3":0,"late10":0,"delaySum":0}}}
 {"ts":"2026-08-22T07:46:45.409Z","total":1,"onTime":0,"late3":1,"late10":1,"avgDelay":11,"byLine":{"LAN":{"total":1,"late3":1,"late10":1,"delaySum":11}}}
 {"ts":"2026-08-22T08:34:55.730Z","total":2,"onTime":2,"late3":0,"late10":0,"avgDelay":0,"byLine":{"AIR":{"total":1,"late3":0,"late10":0,"delaySum":0},"WAR":{"total":1,"late3":0,"late10":0,"delaySum":0}}}
+{"ts":"2026-08-22T09:04:15.545Z","total":4,"onTime":3,"late3":1,"late10":0,"avgDelay":1.75,"byLine":{"AIR":{"total":1,"late3":0,"late10":0,"delaySum":0},"WAR":{"total":2,"late3":0,"late10":0,"delaySum":0},"WIL":{"total":1,"late3":1,"late10":0,"delaySum":7}}}
