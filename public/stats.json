@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-08-23T07:36:50.764Z",
-  "totalSnapshots": 899,
+  "generatedAt": "2026-08-23T08:02:18.597Z",
+  "totalSnapshots": 900,
   "coverageStart": "2026-05-17T22:10:53.304Z",
   "headline": {
-    "ts": "2026-08-23T07:36:50.732Z",
+    "ts": "2026-08-23T08:02:18.569Z",
     "trainsInService": 1,
     "onTimePct": 0,
     "avgDelay": 8,
@@ -55,8 +55,8 @@
     {
       "line": "CHE",
       "avgTrainsPerSample": 1.9,
-      "onTimePct": 64.6,
-      "avgDelay": 3.28,
+      "onTimePct": 64.5,
+      "avgDelay": 3.29,
       "majorDelays": 40
     },
     {
@@ -69,8 +69,8 @@
     {
       "line": "AIR",
       "avgTrainsPerSample": 1.7,
-      "onTimePct": 63.8,
-      "avgDelay": 2.86,
+      "onTimePct": 63.7,
+      "avgDelay": 2.87,
       "majorDelays": 23
     },
     {
@@ -124,14 +124,14 @@
     {
       "hour": 3,
       "onTimePct": 0,
-      "avgDelay": 9.5,
-      "samples": 2
+      "avgDelay": 8,
+      "samples": 1
     },
     {
       "hour": 4,
-      "onTimePct": 100,
-      "avgDelay": 0,
-      "samples": 1
+      "onTimePct": 50,
+      "avgDelay": 4,
+      "samples": 2
     },
     {
       "hour": 5,
