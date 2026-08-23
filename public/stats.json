@@ -1,12 +1,12 @@
 {
-  "generatedAt": "2026-08-23T15:59:03.356Z",
-  "totalSnapshots": 914,
+  "generatedAt": "2026-08-23T16:36:09.401Z",
+  "totalSnapshots": 915,
   "coverageStart": "2026-05-17T22:10:53.304Z",
   "headline": {
-    "ts": "2026-08-23T15:59:03.332Z",
-    "trainsInService": 18,
-    "onTimePct": 66.7,
-    "avgDelay": 4,
+    "ts": "2026-08-23T16:36:09.371Z",
+    "trainsInService": 16,
+    "onTimePct": 81.3,
+    "avgDelay": 3.81,
     "majorDelays": 2
   },
   "lines": [
@@ -20,8 +20,8 @@
     {
       "line": "WAR",
       "avgTrainsPerSample": 3.1,
-      "onTimePct": 73.3,
-      "avgDelay": 2.05,
+      "onTimePct": 73.4,
+      "avgDelay": 2.04,
       "majorDelays": 25
     },
     {
@@ -48,21 +48,21 @@
     {
       "line": "AIR",
       "avgTrainsPerSample": 1.7,
-      "onTimePct": 65,
-      "avgDelay": 2.75,
+      "onTimePct": 64.9,
+      "avgDelay": 2.76,
       "majorDelays": 21
     },
     {
       "line": "CHE",
       "avgTrainsPerSample": 1.9,
-      "onTimePct": 64.6,
+      "onTimePct": 64.9,
       "avgDelay": 3.27,
       "majorDelays": 39
     },
     {
       "line": "PAO",
       "avgTrainsPerSample": 3.5,
-      "onTimePct": 64.4,
+      "onTimePct": 64.5,
       "avgDelay": 3.75,
       "majorDelays": 84
     },
@@ -77,22 +77,22 @@
       "line": "NOR",
       "avgTrainsPerSample": 2.3,
       "onTimePct": 61.4,
-      "avgDelay": 3.09,
+      "avgDelay": 3.08,
       "majorDelays": 28
     },
     {
       "line": "TRE",
       "avgTrainsPerSample": 2.7,
-      "onTimePct": 61.2,
-      "avgDelay": 5.28,
+      "onTimePct": 61.1,
+      "avgDelay": 5.29,
       "majorDelays": 102
     },
     {
       "line": "WTR",
       "avgTrainsPerSample": 2.7,
       "onTimePct": 54.8,
-      "avgDelay": 5.65,
-      "majorDelays": 131
+      "avgDelay": 5.71,
+      "majorDelays": 132
     },
     {
       "line": "CHW",
@@ -177,8 +177,8 @@
     },
     {
       "hour": 12,
-      "onTimePct": 58.8,
-      "avgDelay": 3.35,
+      "onTimePct": 81.3,
+      "avgDelay": 3.81,
       "samples": 1
     },
     {
