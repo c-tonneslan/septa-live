@@ -1,13 +1,13 @@
 {
-  "generatedAt": "2026-08-24T16:48:44.917Z",
-  "totalSnapshots": 947,
+  "generatedAt": "2026-08-24T17:34:31.774Z",
+  "totalSnapshots": 948,
   "coverageStart": "2026-05-17T22:10:53.304Z",
   "headline": {
-    "ts": "2026-08-24T16:48:44.885Z",
-    "trainsInService": 25,
-    "onTimePct": 80,
-    "avgDelay": 1.24,
-    "majorDelays": 0
+    "ts": "2026-08-24T17:34:31.746Z",
+    "trainsInService": 26,
+    "onTimePct": 69.2,
+    "avgDelay": 2.88,
+    "majorDelays": 1
   },
   "lines": [
     {
@@ -19,9 +19,9 @@
     },
     {
       "line": "WAR",
-      "avgTrainsPerSample": 3,
-      "onTimePct": 74.2,
-      "avgDelay": 2.06,
+      "avgTrainsPerSample": 2.9,
+      "onTimePct": 74.1,
+      "avgDelay": 2.07,
       "majorDelays": 24
     },
     {
@@ -56,50 +56,50 @@
       "line": "CHE",
       "avgTrainsPerSample": 1.9,
       "onTimePct": 65.3,
-      "avgDelay": 3.13,
+      "avgDelay": 3.14,
       "majorDelays": 37
     },
     {
       "line": "MED",
       "avgTrainsPerSample": 2.5,
-      "onTimePct": 63.3,
-      "avgDelay": 3.46,
+      "onTimePct": 63.4,
+      "avgDelay": 3.45,
       "majorDelays": 60
     },
     {
       "line": "PAO",
       "avgTrainsPerSample": 3.5,
       "onTimePct": 63,
-      "avgDelay": 3.79,
+      "avgDelay": 3.78,
       "majorDelays": 83
     },
     {
       "line": "NOR",
       "avgTrainsPerSample": 2.3,
-      "onTimePct": 62.9,
+      "onTimePct": 62.8,
       "avgDelay": 3.13,
       "majorDelays": 33
     },
     {
       "line": "TRE",
       "avgTrainsPerSample": 2.8,
-      "onTimePct": 61.7,
+      "onTimePct": 61.5,
       "avgDelay": 4.89,
       "majorDelays": 98
     },
     {
       "line": "WTR",
       "avgTrainsPerSample": 2.6,
-      "onTimePct": 55.8,
-      "avgDelay": 6.16,
-      "majorDelays": 136
+      "onTimePct": 55.9,
+      "avgDelay": 6.13,
+      "majorDelays": 135
     },
     {
       "line": "CHW",
       "avgTrainsPerSample": 1.7,
-      "onTimePct": 54.2,
-      "avgDelay": 4.35,
-      "majorDelays": 31
+      "onTimePct": 54.5,
+      "avgDelay": 4.28,
+      "majorDelays": 30
     }
   ],
   "hourly": [
@@ -183,8 +183,8 @@
     },
     {
       "hour": 13,
-      "onTimePct": 68.9,
-      "avgDelay": 6.1,
+      "onTimePct": 72.6,
+      "avgDelay": 5.13,
       "samples": 3
     },
     {
